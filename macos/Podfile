@@ -1,5 +1,7 @@
-require_relative '../node_modules/react-native-macos/scripts/react_native_pods'
-require_relative '../node_modules/@react-native-community/cli-platform-ios/native_modules'
+# The native_modules.rb was moved to core from 15.1.0:
+# https://github.com/react-native-community/cli/pull/2547
+# https://github.com/microsoft/react-native-macos/issues/2723
+require_relative '../node_modules/react-native-macos/scripts/cocoapods/autolinking.rb'
 
 prepare_react_native_project!
 
@@ -12,8 +14,8 @@ target 'rnmprebuilds-macOS' do
 
   use_react_native!(
     :path => '../node_modules/react-native-macos',
-    :hermes_enabled => false,
-    :fabric_enabled => ENV['RCT_NEW_ARCH_ENABLED'] == '1',
+    :hermes_enabled => true,
+    :fabric_enabled => true,
     # An absolute path to your application root.
     :app_path => "#{Pod::Config.instance.installation_root}/.."
   )
