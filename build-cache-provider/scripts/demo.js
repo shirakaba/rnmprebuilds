@@ -4,7 +4,13 @@
 // Run it as follows:
 // node ./build-cache-provider/scripts/demo.js
 
+const expoSpawnAsync = require('@expo/spawn-async');
+const ExpoFingerprintUtils = require('@expo/fingerprint/build/sourcer/Utils');
+const ExpoResolver = require('@expo/fingerprint/build/ExpoResolver');
+const chalk = require('chalk');
+const debug = require('debug')('build-cache-provider:demo');
 const path = require('node:path');
+
 const {
   default: providerPlugin,
   uploadGitHubRemoteBuildCache,
@@ -89,8 +95,73 @@ async function calculateFingerprintHashAsync({
     );
     return null;
   }
-  const fingerprint = await Fingerprint.createFingerprintAsync(projectRoot);
+  const fingerprint = await Fingerprint.createFingerprintAsync(
+    projectRoot,
+    optionsForMacos(projectRoot, {}),
+  );
   return fingerprint.hash;
+}
+
+/**
+ * @param {string} projectRoot
+ * @param {import("@expo/fingerprint").Options} options
+ * @returns {Promise<import("@expo/fingerprint").Options>}
+ */
+async function optionsForMacos(projectRoot, options) {
+  /** @type {import("@expo/fingerprint").Options} */
+  const resolvedOptions = {
+    // @ts-expect-error Expo is only expecting "android" | "ios"
+    platforms: ['macos'],
+    // Based on some of DEFAULT_IGNORE_PATHS
+    // node_modules/.bun/@expo+fingerprint@0.15.2/node_modules/@expo/fingerprint/build/Options.js
+    ignorePaths: [
+      '**/macos/Pods/**/*',
+      '**/macos/build/**/*',
+      '**/macos/.xcode.env.local',
+      '**/macos/**/project.xcworkspace',
+      '**/macos/*.xcworkspace/xcuserdata/**/*',
+    ],
+
+    ...options,
+  };
+
+  const [extraSources] = await Promise.all([
+    getBareMacosSourcesAsync(projectRoot, {
+      platforms:
+        // @ts-expect-error Expo is only expecting "android" | "ios"
+        resolvedOptions.platforms?.filter(platform => platform === 'macos') ??
+        [],
+    }),
+  ]);
+
+  return {
+    ...resolvedOptions,
+    extraSources,
+  };
+}
+
+/**
+ *
+ * @param {string} projectRoot
+ * @param {Pick<import("@expo/fingerprint").NormalizedOptions, "platforms">} options
+ *
+ * @return {Promise<Array<import("@expo/fingerprint").HashSource>>}
+ */
+async function getBareMacosSourcesAsync(projectRoot, options) {
+  // @ts-expect-error Expo is only expecting "android" | "ios"
+  if (options.platforms.includes('macos')) {
+    const result = await ExpoFingerprintUtils.getFileBasedHashSourceAsync(
+      projectRoot,
+      'ios',
+      'bareNativeDir',
+    );
+
+    if (result != null) {
+      debug(`Adding bare native dir - ${chalk.dim('macos')}`);
+      return [result];
+    }
+  }
+  return [];
 }
 
 /**
