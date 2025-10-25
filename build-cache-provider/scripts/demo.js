@@ -19,8 +19,8 @@ main()
   });
 
 async function main() {
-  /** @type {"ios" | "android"} */
-  const platform = 'ios';
+  /** @type {"ios" | "android" | "macos"} */
+  const platform = 'macos';
   // The options I got by default from `npx expo run:ios`.
   /** @type {import("@expo/config").RunOptions} */
   const runOptions = {
@@ -44,6 +44,7 @@ async function main() {
       projectRoot: path.resolve(__dirname, '../..'),
       fingerprintHash,
       runOptions,
+      // @ts-expect-error Expo is only expecting "android" | "ios"
       platform,
       buildPath: '',
     },
@@ -59,7 +60,7 @@ async function main() {
  *
  * @param {object} arg
  * @param {string} arg.projectRoot
- * @param {"android" | "ios"} arg.platform
+ * @param {"android" | "ios" | "macos"} arg.platform
  * @param {import("@expo/config").BuildCacheProvider} arg.provider
  * @param {import("@expo/config").RunOptions} arg.runOptions
  * @returns {Promise<string | null>}
@@ -74,6 +75,7 @@ async function calculateFingerprintHashAsync({
     return await provider.plugin.calculateFingerprintHash(
       {
         projectRoot,
+        // @ts-expect-error Expo is only expecting "android" | "ios"
         platform,
         runOptions,
       },
