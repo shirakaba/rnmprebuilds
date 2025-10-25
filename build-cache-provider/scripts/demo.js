@@ -141,7 +141,12 @@ async function optionsForMacos(projectRoot, options) {
       resolvedOptions.platforms?.filter(platform => platform === 'macos') ?? [],
   };
 
-  const [bareMacosSources, coreAutolinkingSources] = await Promise.all([
+  const [
+    expoAutolinkingMacosSources,
+    bareMacosSources,
+    coreAutolinkingSourcesFromExpoMacos,
+  ] = await Promise.all([
+    getExpoAutolinkingMacosSourcesAsync(projectRoot, sourcerOptions),
     getBareMacosSourcesAsync(projectRoot, sourcerOptions),
     getCoreAutolinkingSourcesFromExpoMacos(
       projectRoot,
@@ -152,8 +157,65 @@ async function optionsForMacos(projectRoot, options) {
 
   return {
     ...resolvedOptions,
-    extraSources: [...bareMacosSources, ...coreAutolinkingSources],
+    extraSources: [
+      ...expoAutolinkingMacosSources,
+      ...bareMacosSources,
+      ...coreAutolinkingSourcesFromExpoMacos,
+    ],
   };
+}
+
+/**
+ *
+ * @param {string} projectRoot
+ * @param {Pick<import("@expo/fingerprint").NormalizedOptions, "platforms">} options
+ *
+ * @returns {Promise<Array<import("@expo/fingerprint").HashSource>>}
+ */
+async function getExpoAutolinkingMacosSourcesAsync(projectRoot, options) {
+  // @ts-expect-error Expo is only expecting "android" | "ios"
+  if (!options.platforms.includes('macos')) {
+    return [];
+  }
+
+  try {
+    const reasons = ['expoAutolinkingMacos'];
+    const results = [];
+    const { stdout } = await expoSpawnAsync(
+      'node',
+      [
+        ExpoResolver.resolveExpoAutolinkingCliPath(projectRoot),
+        'resolve',
+        '-p',
+        'apple',
+        '--json',
+      ],
+      { cwd: projectRoot },
+    );
+    const config = JSON.parse(stdout);
+    for (const module of config.modules) {
+      for (const pod of module.pods) {
+        const filePath = ExpoPath.toPosixPath(
+          path.relative(projectRoot, pod.podspecDir),
+        );
+        pod.podspecDir = filePath; // use relative path for the dir
+        debug(
+          `Adding expo-modules-autolinking macos dir - ${chalk.dim(filePath)}`,
+        );
+        results.push({ type: 'dir', filePath, reasons });
+      }
+    }
+    results.push({
+      type: 'contents',
+      id: 'expoAutolinkingConfig:macos',
+      contents: JSON.stringify(config),
+      reasons,
+    });
+    // @ts-ignore
+    return results;
+  } catch {
+    return [];
+  }
 }
 
 /**
