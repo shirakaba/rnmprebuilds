@@ -2,6 +2,7 @@
   "name": "build-cache-provider",
   "dependencies": {
     "@expo/config": "11.0.13",
+    "@expo/env": "1.0.7",
     "@expo/spawn-async": "1.7.2",
     "@octokit/rest": "21.1.1",
     "env-paths": "3.0.0",
