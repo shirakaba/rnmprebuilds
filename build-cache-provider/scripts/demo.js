@@ -58,7 +58,7 @@ async function main() {
       platform,
       buildPath: '',
     },
-    { owner: 'shirakaba', repo: 'paranovel-two' },
+    { owner: 'shirakaba', repo: 'rnmprebuilds' },
   );
 }
 
