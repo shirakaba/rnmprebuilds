@@ -7,9 +7,12 @@
 const expoSpawnAsync = require('@expo/spawn-async');
 const ExpoFingerprintUtils = require('@expo/fingerprint/build/sourcer/Utils');
 const ExpoResolver = require('@expo/fingerprint/build/ExpoResolver');
+const ExpoPath = require('@expo/fingerprint/build/utils/Path');
 const chalk = require('chalk');
 const debug = require('debug')('build-cache-provider:demo');
 const path = require('node:path');
+const assert = require('node:assert');
+const process = require('node:process');
 
 const {
   default: providerPlugin,
@@ -122,22 +125,161 @@ async function optionsForMacos(projectRoot, options) {
       '**/macos/*.xcworkspace/xcuserdata/**/*',
     ],
 
+    // Just trying out.
+    useRNCoreAutolinkingFromExpo: true,
+
     ...options,
   };
 
-  const [extraSources] = await Promise.all([
-    getBareMacosSourcesAsync(projectRoot, {
-      platforms:
-        // @ts-expect-error Expo is only expecting "android" | "ios"
-        resolvedOptions.platforms?.filter(platform => platform === 'macos') ??
-        [],
-    }),
+  /** @type {Pick<import("@expo/fingerprint").NormalizedOptions, "platforms">} */
+  const sourcerOptions = {
+    platforms:
+      // @ts-expect-error Expo is only expecting "android" | "ios"
+      resolvedOptions.platforms?.filter(platform => platform === 'macos') ?? [],
+  };
+
+  const [bareMacosSources, coreAutolinkingSources] = await Promise.all([
+    getBareMacosSourcesAsync(projectRoot, sourcerOptions),
+    getCoreAutolinkingSourcesFromExpoMacos(
+      projectRoot,
+      sourcerOptions,
+      resolvedOptions.useRNCoreAutolinkingFromExpo,
+    ),
   ]);
 
   return {
     ...resolvedOptions,
-    extraSources,
+    extraSources: [...bareMacosSources, ...coreAutolinkingSources],
   };
+}
+
+/**
+ *
+ * @param {string} projectRoot
+ * @param {Pick<import("@expo/fingerprint").NormalizedOptions, "platforms">} options
+ * @param {boolean} [useRNCoreAutolinkingFromExpo]
+ * @returns
+ */
+async function getCoreAutolinkingSourcesFromExpoMacos(
+  projectRoot,
+  options,
+  useRNCoreAutolinkingFromExpo,
+) {
+  if (
+    useRNCoreAutolinkingFromExpo === false ||
+    // @ts-expect-error Expo is only expecting "android" | "ios"
+    !options.platforms.includes('macos')
+  ) {
+    return [];
+  }
+  try {
+    const { stdout } = await expoSpawnAsync(
+      'node',
+      [
+        ExpoResolver.resolveExpoAutolinkingCliPath(projectRoot),
+        'react-native-config',
+        '--json',
+        '--platform',
+        'macos',
+      ],
+      { cwd: projectRoot },
+    );
+    const config = JSON.parse(stdout);
+    const results = await parseCoreAutolinkingSourcesAsync({
+      config,
+      contentsId: 'rncoreAutolinkingConfig:macos',
+      reasons: ['rncoreAutolinkingMacos'],
+      platform: 'macos',
+    });
+    return results;
+  } catch (e) {
+    debug(
+      chalk.red(
+        `Error adding react-native core autolinking sources for macos.\n${e}`,
+      ),
+    );
+    return [];
+  }
+}
+
+/**
+ *
+ * @param {object} param0
+ * @param {any} param0.config
+ * @param {Array<string>} param0.reasons
+ * @param {string} param0.contentsId
+ * @param {string} [param0.platform]
+ *
+ * @returns {Promise<Array<import("@expo/fingerprint").HashSource>>}
+ */
+async function parseCoreAutolinkingSourcesAsync({
+  config,
+  reasons,
+  contentsId,
+  platform,
+}) {
+  const logTag = platform
+    ? `react-native core autolinking dir for ${platform}`
+    : 'react-native core autolinking dir';
+  const results = [];
+  const { root } = config;
+  const autolinkingConfig = {};
+  for (const [depName, depData] of Object.entries(config.dependencies)) {
+    try {
+      stripRncoreAutolinkingAbsolutePaths(depData, root);
+      const filePath = ExpoPath.toPosixPath(depData.root);
+      debug(`Adding ${logTag} - ${chalk.dim(filePath)}`);
+      results.push({ type: 'dir', filePath, reasons });
+      // @ts-ignore
+      autolinkingConfig[depName] = depData;
+    } catch (e) {
+      debug(chalk.red(`Error adding ${logTag} - ${depName}.\n${e}`));
+    }
+  }
+  results.push({
+    type: 'contents',
+    id: contentsId,
+    contents: JSON.stringify(autolinkingConfig),
+    reasons,
+  });
+
+  // @ts-ignore
+  return results;
+}
+
+/**
+ *
+ * @param {any} dependency
+ * @param {string} root
+ */
+function stripRncoreAutolinkingAbsolutePaths(dependency, root) {
+  assert(dependency.root);
+  const dependencyRoot = dependency.root;
+  const cmakeDepRoot =
+    process.platform === 'win32'
+      ? dependencyRoot.replace(/\\/g, '/')
+      : dependencyRoot;
+  dependency.root = ExpoPath.toPosixPath(path.relative(root, dependencyRoot));
+  for (const platformData of Object.values(dependency.platforms)) {
+    for (const [key, value] of Object.entries(platformData ?? {})) {
+      let newValue;
+      if (
+        process.platform === 'win32' &&
+        ['cmakeListsPath', 'cxxModuleCMakeListsPath'].includes(key)
+      ) {
+        // CMake paths on Windows are serving in slashes,
+        // we have to check startsWith with the same slashes.
+        newValue = value?.startsWith?.(cmakeDepRoot)
+          ? ExpoPath.toPosixPath(path.relative(root, value))
+          : value;
+      } else {
+        newValue = value?.startsWith?.(dependencyRoot)
+          ? ExpoPath.toPosixPath(path.relative(root, value))
+          : value;
+      }
+      platformData[key] = newValue;
+    }
+  }
 }
 
 /**
