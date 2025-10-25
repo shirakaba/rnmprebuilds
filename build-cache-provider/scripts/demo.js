@@ -98,9 +98,12 @@ async function calculateFingerprintHashAsync({
     );
     return null;
   }
+
+  const options = await optionsForMacos(projectRoot, {});
+
   const fingerprint = await Fingerprint.createFingerprintAsync(
     projectRoot,
-    optionsForMacos(projectRoot, {}),
+    options,
   );
   return fingerprint.hash;
 }
@@ -294,7 +297,7 @@ async function getBareMacosSourcesAsync(projectRoot, options) {
   if (options.platforms.includes('macos')) {
     const result = await ExpoFingerprintUtils.getFileBasedHashSourceAsync(
       projectRoot,
-      'ios',
+      'macos',
       'bareNativeDir',
     );
 
