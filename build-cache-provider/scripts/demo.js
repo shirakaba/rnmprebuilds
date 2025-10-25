@@ -8,6 +8,7 @@ const expoSpawnAsync = require('@expo/spawn-async');
 const ExpoFingerprintUtils = require('@expo/fingerprint/build/sourcer/Utils');
 const ExpoResolver = require('@expo/fingerprint/build/ExpoResolver');
 const ExpoPath = require('@expo/fingerprint/build/utils/Path');
+const ExpoPackages = require('@expo/fingerprint/build/sourcer/Packages');
 const chalk = require('chalk');
 const debug = require('debug')('build-cache-provider:demo');
 const path = require('node:path');
@@ -145,14 +146,17 @@ async function optionsForMacos(projectRoot, options) {
     expoAutolinkingMacosSources,
     bareMacosSources,
     coreAutolinkingSourcesFromExpoMacos,
+    defaultPackageSourcesAsync,
   ] = await Promise.all([
     getExpoAutolinkingMacosSourcesAsync(projectRoot, sourcerOptions),
+    // TODO: getPackageJsonScriptSourcesAsync
     getBareMacosSourcesAsync(projectRoot, sourcerOptions),
     getCoreAutolinkingSourcesFromExpoMacos(
       projectRoot,
       sourcerOptions,
       resolvedOptions.useRNCoreAutolinkingFromExpo,
     ),
+    getDefaultPackageSourcesAsync(projectRoot),
   ]);
 
   return {
@@ -161,8 +165,27 @@ async function optionsForMacos(projectRoot, options) {
       ...expoAutolinkingMacosSources,
       ...bareMacosSources,
       ...coreAutolinkingSourcesFromExpoMacos,
+      ...defaultPackageSourcesAsync,
     ],
   };
+}
+
+/**
+ * @param {string} projectRoot
+ * @returns {Promise<Array<import("@expo/fingerprint").HashSource>>}
+ */
+async function getDefaultPackageSourcesAsync(projectRoot) {
+  const results = await Promise.all(
+    [
+      {
+        packageName: 'react-native-macos',
+        packageJsonOnly: true,
+      },
+    ].map(params => ExpoPackages.getPackageSourceAsync(projectRoot, params)),
+  );
+
+  // @ts-ignore
+  return results.filter(Boolean);
 }
 
 /**
