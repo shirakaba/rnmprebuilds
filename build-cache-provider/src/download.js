@@ -23,7 +23,6 @@ async function downloadFileAsync(url, outputPath) {
       throw new Error(`Failed to download file from ${url}`);
     }
 
-    // @ts-expect-error Not quite sure why it's unhappy with Response.
     await pipeline(response.body, fs.createWriteStream(outputPath));
   } catch (error) {
     if (await fs.pathExists(outputPath)) {
