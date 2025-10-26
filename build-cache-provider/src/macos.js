@@ -14,7 +14,7 @@ const process = require('node:process');
  * @param {import("@expo/fingerprint").Options} options
  * @returns {Promise<import("@expo/fingerprint").Options>}
  */
-async function getOptionsForMacos(projectRoot, options) {
+async function getExtraOptionsForMacos(projectRoot, options) {
   /** @type {import("@expo/fingerprint").Options} */
   const resolvedOptions = {
     // @ts-expect-error Expo is only expecting "android" | "ios"
@@ -69,7 +69,7 @@ async function getOptionsForMacos(projectRoot, options) {
     ],
   };
 }
-exports.getOptionsForMacos = getOptionsForMacos;
+exports.getExtraOptionsForMacos = getExtraOptionsForMacos;
 
 /**
  * @param {string} projectRoot
