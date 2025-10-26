@@ -38,7 +38,8 @@ async function calculateFingerprintHashAsync({
     return null;
   }
 
-  const options = await getExtraOptionsForMacos(projectRoot, {});
+  const options =
+    platform === 'macos' ? await getExtraOptionsForMacos(projectRoot, {}) : {};
 
   const fingerprint = await Fingerprint.createFingerprintAsync(
     projectRoot,
