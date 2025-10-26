@@ -18,6 +18,13 @@ const { downloadAndMaybeExtractAppAsync } = require('./download');
 
 const { BUILD_CACHE_PROVIDER_TOKEN } = parseProjectEnv(
   path.resolve(__dirname, '../..'),
+  {
+    // This determines whether to load `.env.${mode}` and `.env.${mode}.local`.
+    // Possible values are 'development', 'production', and 'test'.
+    //
+    // TODO: Customise for debug vs. release builds
+    mode: 'production',
+  },
 ).env;
 
 /**
