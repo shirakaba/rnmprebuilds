@@ -37,6 +37,17 @@ async function main() {
     buildCache: true,
     bundler: true,
     install: true,
+    // The `binary` option is a path to an existing .app or .ipa to install,
+    // allowing the CLi to skip the native build.
+    // - node_modules/@expo/cli/build/src/run/ios/index.js
+    // - node_modules/@expo/cli/build/src/run/ios/runIosAsync.js
+    //
+    // If omitted, yet there's a build provider AND we're building for
+    // simulator, Expo CLI will resolve from any existing build caches and set
+    // options.binary to that if there's a cache hit.
+
+    // The `unstable-rebundle` option is for re-bundling the app and assets for
+    // a build to try different JS code in release builds.
   };
   const projectRoot = path.resolve(__dirname, '../..');
 
@@ -56,6 +67,8 @@ async function main() {
       runOptions,
       // @ts-expect-error Expo is only expecting "android" | "ios"
       platform,
+      // This is determined by `binaryPath` in:
+      // node_modules/@expo/cli/build/src/run/ios/runIosAsync.js
       buildPath: '',
     },
     { owner: 'shirakaba', repo: 'rnmprebuilds' },

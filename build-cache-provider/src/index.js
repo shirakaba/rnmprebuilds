@@ -22,7 +22,8 @@ const { BUILD_CACHE_PROVIDER_TOKEN } = parseProjectEnv(
     // This determines whether to load `.env.${mode}` and `.env.${mode}.local`.
     // Possible values are 'development', 'production', and 'test'.
     //
-    // TODO: Customise for debug vs. release builds
+    // TODO: Customise for debug vs. release builds, as done in:
+    // node_modules/@expo/cli/build/src/run/ios/runIosAsync.js
     mode: 'production',
   },
 ).env;
@@ -40,6 +41,8 @@ async function resolveGitHubRemoteBuildCache(
   { projectRoot, platform, fingerprintHash, runOptions },
   { owner, repo },
 ) {
+  // Gives a value of, for example (on macOS):
+  //   '/var/folders/0m/nf10bfxx6rgft8tn29fznymc0000gn/T/github-build-cache-provider-nodejs/build-run-cache/fingerprint.a7672e8d257130e45120c54592207c049c5feb4a.app'
   const cachedAppPath = await getCachedAppPath({
     fingerprintHash,
     platform,
@@ -163,8 +166,14 @@ async function getCachedAppPath({
   projectRoot,
   runOptions,
 }) {
+  // On macOS, this resolves as:
+  //   path.join(os.tmpdir(), 'github-build-cache-provider', 'build-run-cache')
+  // … thus:
+  //   '/var/folders/0m/nf10bfxx6rgft8tn29fznymc0000gn/T/github-build-cache-provider-nodejs/build-run-cache'
   const buildRunCacheDirectoryPath = await getBuildRunCacheDirectoryPath();
 
+  // This then returns:
+  //   '/var/folders/0m/nf10bfxx6rgft8tn29fznymc0000gn/T/github-build-cache-provider-nodejs/build-run-cache/fingerprint.a7672e8d257130e45120c54592207c049c5feb4a.app'
   return path.join(
     buildRunCacheDirectoryPath,
     `${getTagName({
@@ -180,6 +189,8 @@ async function getCachedAppPath({
  */
 const providerPlugin = {
   resolveBuildCache: resolveGitHubRemoteBuildCache,
+  // This is called upon `expo run ios` and `expo run android`:
+  // node_modules/@expo/cli/build/src/run/ios/runIosAsync.js
   uploadBuildCache: uploadGitHubRemoteBuildCache,
 };
 exports.default = providerPlugin;
