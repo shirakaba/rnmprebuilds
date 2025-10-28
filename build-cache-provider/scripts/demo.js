@@ -4,22 +4,18 @@
 // Run it as follows:
 // node ./build-cache-provider/scripts/demo.js
 
+const { exec } = require('node:child_process');
+const { argv } = require('node:process');
+const { promisify, parseArgs } = require('node:util');
+const execAsync = promisify(exec);
+
 const path = require('node:path');
-// const process = require('node:process');
 const XcodeBuild = require('@expo/cli/build/src/run/ios/XcodeBuild');
-// const {
-//   resolveOptionsAsync,
-// } = require('@expo/cli/build/src/run/ios/options/resolveOptions');
 const {
   resolveNativeSchemePropsAsync,
 } = require('@expo/cli/build/src/run/ios/options/resolveNativeScheme');
 
-// node_modules/@expo/cli/build/src/run/ios/options/resolveOptions.js
-
-const {
-  default: providerPlugin,
-  uploadGitHubRemoteBuildCache,
-} = require('../src/index');
+const { default: providerPlugin } = require('../src/index');
 const { calculateFingerprintHashAsync } = require('../src/cli/fingerprint');
 
 main()
@@ -31,6 +27,50 @@ main()
   });
 
 async function main() {
+  const { config, help } = parseArgs({
+    args: argv.slice(2),
+    options: {
+      config: {
+        type: 'string',
+        default: false,
+      },
+      help: {
+        short: 'h',
+        type: 'boolean',
+        default: false,
+      },
+    },
+  }).values;
+
+  if (help) {
+    console.log(
+      `
+Usage: node demo.js
+       node demo.js [options]
+       node demo.js [-h | --help]
+
+  --config        The build configuration. Accepted values are "Debug" and
+                  "Release".
+                  Default: "Debug".
+
+  -h, --help      Show this help message and exit.
+
+Examples:
+
+# Debug build
+$ node demo.js --config Debug
+
+# Release build
+$ node demo.js --config Release
+`.trim(),
+    );
+    return;
+  }
+
+  if (config !== 'Release' && config !== 'Debug') {
+    return;
+  }
+
   /** @type {"ios" | "android" | "macos"} */
   const platform = 'macos';
 
@@ -41,7 +81,7 @@ async function main() {
     bundler: true,
     install: true,
 
-    configuration: 'Debug',
+    configuration: config,
 
     // The `binary` option is a path to an existing .app or .ipa to install,
     // allowing the CLI to skip the native build.
@@ -70,56 +110,115 @@ async function main() {
 
   // const buildOptions = await resolveOptionsAsync(projectRoot, runOptions);
 
-  /** @type {import('@expo/cli/build/src/run/ios/XcodeBuild.types').ProjectInfo} */
-  const xcodeProject = {
-    isWorkspace: true,
-    name: path.resolve(projectRoot, 'macos', 'rnmprebuilds.xcworkspace'),
-  };
+  const xcworkspacePath = path.resolve(
+    projectRoot,
+    'macos',
+    'rnmprebuilds.xcworkspace',
+  );
 
-  const { name: scheme } = await resolveNativeSchemePropsAsync(
+  /** @type {import('@expo/cli/build/src/run/ios/XcodeBuild.types').ProjectInfo} */
+  const xcodeProject = { isWorkspace: true, name: xcworkspacePath };
+
+  const { name } = await resolveNativeSchemePropsAsync(
     projectRoot,
     runOptions,
     xcodeProject,
   );
+  // This is the scheme naming convention used by react-native-macos.
+  const scheme = `${name}-macOS`;
+
+  const deviceId = await getMyMacIdFromRunDestination({
+    scheme,
+    workspace: xcworkspacePath,
+  });
 
   /** @type {import('@expo/cli/build/src/run/ios/XcodeBuild.types').BuildProps} */
   const buildProps = {
     buildCache: runOptions.buildCache ?? true,
     buildCacheProvider,
     configuration: runOptions.configuration ?? 'Debug',
+    // If you set `isSimulator: false`, it prompts you to select your
+    // "Development team for signing the app".
     isSimulator: true,
-    // { platform:macOS, arch:arm64, id:00006031-0018403C0268001C, name:My Mac }
-    // { platform:macOS, name:Any Mac }
-    // xcodebuild -workspace rnmprebuilds.xcworkspace -scheme rnmprebuilds-macOS -showdestinations
     device: {
       name: 'My Mac',
-      udid: '00006031-0018403C0268001C',
+      udid: deviceId,
       osType: 'macOS',
     },
     port: 8081,
     projectRoot,
-    scheme: `${scheme}-macOS`,
+    scheme,
     shouldSkipInitialBundling: false,
     shouldStartBundler: true,
     xcodeProject,
   };
 
   // Spawn the `xcodebuild` process to create the app binary.
-  const buildOutput = await XcodeBuild.buildAsync(buildProps); // If `isSimulator: false`, this prompts "Development team for signing the app" and shows you your Apple Development certificates for various teams, and 3rd Party Mac Developer Installer.
+  const buildOutput = await XcodeBuild.buildAsync(buildProps);
 
   // '/Users/jamie/Library/Developer/Xcode/DerivedData/rnmprebuilds-cfktnscoesgdwsdwwnwsasezdfqm/Build/Products/Debug/rnmprebuilds.app/Contents/Resources'
   const binaryPath = await XcodeBuild.getAppBinaryPath(buildOutput);
 
-  await uploadGitHubRemoteBuildCache(
-    {
-      projectRoot: path.resolve(__dirname, '../..'),
-      fingerprintHash,
-      runOptions,
-      // @ts-expect-error Expo is only expecting "android" | "ios"
-      platform,
-      // Climb up out of Contents/Resources
-      buildPath: path.resolve(binaryPath, '../..'),
-    },
-    { owner: 'shirakaba', repo: 'rnmprebuilds' },
+  console.log(binaryPath);
+
+  // await uploadGitHubRemoteBuildCache(
+  //   {
+  //     projectRoot: path.resolve(__dirname, '../..'),
+  //     fingerprintHash,
+  //     runOptions,
+  //     // @ts-expect-error Expo is only expecting "android" | "ios"
+  //     platform,
+  //     // Climb up out of Contents/Resources
+  //     buildPath: path.resolve(binaryPath, '../..'),
+  //   },
+  //   { owner: 'shirakaba', repo: 'rnmprebuilds' },
+  // );
+}
+
+/**
+ * @param {object} args
+ * @param {string} args.scheme
+ * @param {string} args.workspace
+ * @param {string} [args.cwd]
+ */
+async function getMyMacIdFromRunDestination({ scheme, workspace, cwd }) {
+  /** @type {{ stdout: string; stderr: string; }} */
+  let output;
+  try {
+    output = await execAsync(
+      `xcodebuild -workspace "${workspace}" -scheme "${scheme}" -showdestinations`,
+      { cwd },
+    );
+  } catch (cause) {
+    throw new Error('Error getting run destinations', { cause });
+  }
+
+  for (const line of output.stdout.split('\n')) {
+    const match = myMacPattern.exec(line);
+    if (!match) {
+      continue;
+    }
+    const [, id] = match;
+    return id;
+  }
+
+  throw new Error(
+    `Unable to find \"My Mac\" in destinations, given output:\n${output}`,
   );
 }
+
+/**
+ * Matches within this output and captures the id:
+ *
+ * ```
+ * Command line invocation:
+ *     /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -workspace ./macos/rnmprebuilds.xcworkspace -scheme rnmprebuilds-macOS -showdestinations
+ *
+ *
+ *
+ *         Available destinations for the "rnmprebuilds-macOS" scheme:
+ *                 { platform:macOS, arch:arm64, id:00006031-0018403C0268001C, name:My Mac }
+ *                 { platform:macOS, name:Any Mac }
+ * ```
+ */
+const myMacPattern = /{ platform:macOS, arch:.*, id:(.*), name:My Mac }/;
