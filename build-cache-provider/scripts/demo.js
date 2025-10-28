@@ -36,7 +36,7 @@ async function main() {
     options: {
       config: {
         type: 'string',
-        default: false,
+        default: 'Debug',
       },
       help: {
         short: 'h',
@@ -101,7 +101,6 @@ $ node demo.js --config Release
   };
   const projectRoot = path.resolve(__dirname, '../..');
   const buildCacheProvider = { plugin: providerPlugin, options: {} };
-
   const ownerAndRepo = { owner: 'shirakaba', repo: 'rnmprebuilds' };
 
   const fingerprintHash = await calculateFingerprintHashAsync({
@@ -111,15 +110,15 @@ $ node demo.js --config Release
     provider: buildCacheProvider,
   });
 
-  if (runOptions.binary) {
+  if (!runOptions.binary) {
     const localPath = fingerprintHash
       ? await resolveGitHubRemoteBuildCache(
           {
             projectRoot,
             // @ts-expect-error Expo is only expecting "android" | "ios"
             platform,
+            fingerprintHash,
             runOptions,
-            provider: providerPlugin,
           },
           ownerAndRepo,
         )
