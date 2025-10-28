@@ -2,7 +2,10 @@ const expoSpawnAsync = require('@expo/spawn-async');
 const ExpoFingerprintUtils = require('@expo/fingerprint/build/sourcer/Utils');
 const ExpoResolver = require('@expo/fingerprint/build/ExpoResolver');
 const ExpoPath = require('@expo/fingerprint/build/utils/Path');
+const ExpoFingerprintOptions = require('@expo/fingerprint/build/Options');
 const ExpoPackages = require('@expo/fingerprint/build/sourcer/Packages');
+const SourceSkips = require('@expo/fingerprint/build/sourcer/SourceSkips');
+const resolveFrom = require('resolve-from');
 const chalk = require('chalk');
 const debug = require('debug')('build-cache-provider:demo');
 const path = require('node:path');
@@ -35,21 +38,25 @@ async function getExtraOptionsForMacos(projectRoot, options) {
     ...options,
   };
 
-  /** @type {Pick<import("@expo/fingerprint").NormalizedOptions, "platforms">} */
+  /** @type {Pick<import("@expo/fingerprint").NormalizedOptions, "platforms" | "sourceSkips">} */
   const sourcerOptions = {
     platforms:
       // @ts-expect-error Expo is only expecting "android" | "ios"
       resolvedOptions.platforms?.filter(platform => platform === 'macos') ?? [],
+    sourceSkips:
+      resolvedOptions.sourceSkips ??
+      ExpoFingerprintOptions.DEFAULT_SOURCE_SKIPS,
   };
 
   const [
     expoAutolinkingMacosSources,
+    packageJsonScriptSourcesAsync,
     bareMacosSources,
     coreAutolinkingSourcesFromExpoMacos,
     defaultPackageSourcesAsync,
   ] = await Promise.all([
     getExpoAutolinkingMacosSourcesAsync(projectRoot, sourcerOptions),
-    // TODO: getPackageJsonScriptSourcesAsync
+    getPackageJsonScriptSourcesAsync(projectRoot, sourcerOptions),
     getBareMacosSourcesAsync(projectRoot, sourcerOptions),
     getCoreAutolinkingSourcesFromExpoMacos(
       projectRoot,
@@ -63,6 +70,7 @@ async function getExtraOptionsForMacos(projectRoot, options) {
     ...resolvedOptions,
     extraSources: [
       ...expoAutolinkingMacosSources,
+      ...packageJsonScriptSourcesAsync,
       ...bareMacosSources,
       ...coreAutolinkingSourcesFromExpoMacos,
       ...defaultPackageSourcesAsync,
@@ -70,24 +78,6 @@ async function getExtraOptionsForMacos(projectRoot, options) {
   };
 }
 exports.getExtraOptionsForMacos = getExtraOptionsForMacos;
-
-/**
- * @param {string} projectRoot
- * @returns {Promise<Array<import("@expo/fingerprint").HashSource>>}
- */
-async function getDefaultPackageSourcesAsync(projectRoot) {
-  const results = await Promise.all(
-    [
-      {
-        packageName: 'react-native-macos',
-        packageJsonOnly: true,
-      },
-    ].map(params => ExpoPackages.getPackageSourceAsync(projectRoot, params)),
-  );
-
-  // @ts-ignore
-  return results.filter(Boolean);
-}
 
 /**
  *
@@ -140,6 +130,98 @@ async function getExpoAutolinkingMacosSourcesAsync(projectRoot, options) {
   } catch {
     return [];
   }
+}
+
+/**
+ *
+ * @param {string} projectRoot
+ * @param {Pick<import("@expo/fingerprint").NormalizedOptions, "sourceSkips">} options
+ * @returns {Promise<Array<import("@expo/fingerprint").HashSource>>}
+ */
+async function getPackageJsonScriptSourcesAsync(projectRoot, options) {
+  if (options.sourceSkips & SourceSkips.SourceSkips.PackageJsonScriptsAll) {
+    return [];
+  }
+  /** @type {{ scripts?: Record<string, string>}} */
+  let packageJson;
+  try {
+    packageJson = require(resolveFrom(
+      path.resolve(projectRoot),
+      './package.json',
+    ));
+  } catch (e) {
+    debug(
+      `Unable to read package.json from ${path.resolve(
+        projectRoot,
+      )}/package.json: ` + e,
+    );
+    return [];
+  }
+  /** @type {Array<import("@expo/fingerprint").HashSource>} */
+  const results = [];
+  if (packageJson.scripts) {
+    debug(`Adding package.json contents - ${chalk.dim('scripts')}`);
+    const id = 'packageJson:scripts';
+    results.push({
+      type: 'contents',
+      id,
+      contents: normalizePackageJsonScriptSources(packageJson.scripts, options),
+      reasons: [id],
+    });
+  }
+  return results;
+}
+
+/**
+ *
+ * @param {Record<string, string>} scripts
+ * @param {Pick<import("@expo/fingerprint").NormalizedOptions, "sourceSkips">} options
+ * @returns
+ */
+function normalizePackageJsonScriptSources(scripts, options) {
+  if (
+    options.sourceSkips &
+    SourceSkips.SourceSkips.PackageJsonAndroidAndIosScriptsIfNotContainRun
+  ) {
+    // Replicate the behavior of `expo prebuild`
+    if (
+      !scripts.android?.includes('run') ||
+      scripts.android === 'expo run:android'
+    ) {
+      delete scripts.android;
+    }
+    if (!scripts.ios?.includes('run') || scripts.ios === 'expo run:ios') {
+      delete scripts.ios;
+    }
+    if (!scripts.macos?.includes('run') || scripts.macos === 'expo run:macos') {
+      delete scripts.macos;
+    }
+  }
+  return JSON.stringify(scripts);
+}
+
+/**
+ *
+ * @param {string} projectRoot
+ * @param {Pick<import("@expo/fingerprint").NormalizedOptions, "platforms">} options
+ *
+ * @return {Promise<Array<import("@expo/fingerprint").HashSource>>}
+ */
+async function getBareMacosSourcesAsync(projectRoot, options) {
+  // @ts-expect-error Expo is only expecting "android" | "ios"
+  if (options.platforms.includes('macos')) {
+    const result = await ExpoFingerprintUtils.getFileBasedHashSourceAsync(
+      projectRoot,
+      'macos',
+      'bareNativeDir',
+    );
+
+    if (result != null) {
+      debug(`Adding bare native dir - ${chalk.dim('macos')}`);
+      return [result];
+    }
+  }
+  return [];
 }
 
 /**
@@ -272,25 +354,19 @@ function stripRncoreAutolinkingAbsolutePaths(dependency, root) {
 }
 
 /**
- *
  * @param {string} projectRoot
- * @param {Pick<import("@expo/fingerprint").NormalizedOptions, "platforms">} options
- *
- * @return {Promise<Array<import("@expo/fingerprint").HashSource>>}
+ * @returns {Promise<Array<import("@expo/fingerprint").HashSource>>}
  */
-async function getBareMacosSourcesAsync(projectRoot, options) {
-  // @ts-expect-error Expo is only expecting "android" | "ios"
-  if (options.platforms.includes('macos')) {
-    const result = await ExpoFingerprintUtils.getFileBasedHashSourceAsync(
-      projectRoot,
-      'macos',
-      'bareNativeDir',
-    );
+async function getDefaultPackageSourcesAsync(projectRoot) {
+  const results = await Promise.all(
+    [
+      {
+        packageName: 'react-native-macos',
+        packageJsonOnly: true,
+      },
+    ].map(params => ExpoPackages.getPackageSourceAsync(projectRoot, params)),
+  );
 
-    if (result != null) {
-      debug(`Adding bare native dir - ${chalk.dim('macos')}`);
-      return [result];
-    }
-  }
-  return [];
+  // @ts-ignore
+  return results.filter(Boolean);
 }

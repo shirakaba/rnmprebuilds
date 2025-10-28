@@ -17,8 +17,9 @@
   },
   "devDependencies": {
     "@tsconfig/node22": "22.0.2",
-    "@types/debug": "^4.1.12",
+    "@types/debug": "4.1.12",
     "@types/fs-extra": "11.0.4",
+    "resolve-from": "5.0.0",
     "typescript": "5.8.3"
   }
 }
