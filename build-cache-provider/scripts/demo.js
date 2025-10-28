@@ -15,7 +15,11 @@ const {
   resolveNativeSchemePropsAsync,
 } = require('@expo/cli/build/src/run/ios/options/resolveNativeScheme');
 
-const { default: providerPlugin } = require('../src/index');
+const {
+  default: providerPlugin,
+  resolveGitHubRemoteBuildCache,
+  uploadGitHubRemoteBuildCache,
+} = require('../src/index');
 const { calculateFingerprintHashAsync } = require('../src/cli/fingerprint');
 
 main()
@@ -96,83 +100,125 @@ $ node demo.js --config Release
     // a build to try different JS code in release builds.
   };
   const projectRoot = path.resolve(__dirname, '../..');
-
   const buildCacheProvider = { plugin: providerPlugin, options: {} };
+
+  const ownerAndRepo = { owner: 'shirakaba', repo: 'rnmprebuilds' };
+
   const fingerprintHash = await calculateFingerprintHashAsync({
     projectRoot,
     runOptions,
     platform,
     provider: buildCacheProvider,
   });
-  if (!fingerprintHash) {
-    throw new Error('Expected fingerprintHash to be non-null.');
+
+  if (runOptions.binary) {
+    const localPath = fingerprintHash
+      ? await resolveGitHubRemoteBuildCache(
+          {
+            projectRoot,
+            // @ts-expect-error Expo is only expecting "android" | "ios"
+            platform,
+            runOptions,
+            provider: providerPlugin,
+          },
+          ownerAndRepo,
+        )
+      : null;
+    if (localPath) {
+      runOptions.binary = localPath;
+    }
   }
 
-  // const buildOptions = await resolveOptionsAsync(projectRoot, runOptions);
+  // TODO: implement options.rebundle
 
-  const xcworkspacePath = path.resolve(
-    projectRoot,
-    'macos',
-    'rnmprebuilds.xcworkspace',
-  );
+  /** @type {string} */
+  let binaryPath;
+  let shouldUpdateBuildCache = false;
+  if (runOptions.binary) {
+    // TODO: validate external binary
+    binaryPath = runOptions.binary;
+  } else {
+    // TODO: implement eager bundling for Release mode
 
-  /** @type {import('@expo/cli/build/src/run/ios/XcodeBuild.types').ProjectInfo} */
-  const xcodeProject = { isWorkspace: true, name: xcworkspacePath };
+    // This would be the "correct" way to get the build props, but it relies on
+    // app.json so won't work in bare React Native macOS apps.
+    //   const buildProps = await resolveOptionsAsync(projectRoot, runOptions);
 
-  const { name } = await resolveNativeSchemePropsAsync(
-    projectRoot,
-    runOptions,
-    xcodeProject,
-  );
-  // This is the scheme naming convention used by react-native-macos.
-  const scheme = `${name}-macOS`;
+    const xcworkspacePath = path.resolve(
+      projectRoot,
+      'macos',
+      'rnmprebuilds.xcworkspace',
+    );
 
-  const deviceId = await getMyMacIdFromRunDestination({
-    scheme,
-    workspace: xcworkspacePath,
-  });
+    /** @type {import('@expo/cli/build/src/run/ios/XcodeBuild.types').ProjectInfo} */
+    const xcodeProject = { isWorkspace: true, name: xcworkspacePath };
 
-  /** @type {import('@expo/cli/build/src/run/ios/XcodeBuild.types').BuildProps} */
-  const buildProps = {
-    buildCache: runOptions.buildCache ?? true,
-    buildCacheProvider,
-    configuration: runOptions.configuration ?? 'Debug',
-    // If you set `isSimulator: false`, it prompts you to select your
-    // "Development team for signing the app".
-    isSimulator: true,
-    device: {
-      name: 'My Mac',
-      udid: deviceId,
-      osType: 'macOS',
-    },
-    port: 8081,
-    projectRoot,
-    scheme,
-    shouldSkipInitialBundling: false,
-    shouldStartBundler: true,
-    xcodeProject,
-  };
+    const { name } = await resolveNativeSchemePropsAsync(
+      projectRoot,
+      runOptions,
+      xcodeProject,
+    );
+    // This is the scheme naming convention used by react-native-macos.
+    const scheme = `${name}-macOS`;
 
-  // Spawn the `xcodebuild` process to create the app binary.
-  const buildOutput = await XcodeBuild.buildAsync(buildProps);
+    const deviceId = await getMyMacIdFromRunDestination({
+      scheme,
+      workspace: xcworkspacePath,
+    });
 
-  // '/Users/jamie/Library/Developer/Xcode/DerivedData/rnmprebuilds-cfktnscoesgdwsdwwnwsasezdfqm/Build/Products/Debug/rnmprebuilds.app/Contents/Resources'
-  const binaryPath = await XcodeBuild.getAppBinaryPath(buildOutput);
+    /** @type {import('@expo/cli/build/src/run/ios/XcodeBuild.types').BuildProps} */
+    const buildProps = {
+      buildCache: runOptions.buildCache ?? true,
+      buildCacheProvider,
+      configuration: runOptions.configuration ?? 'Debug',
+      // If you set `isSimulator: false`, it prompts you to select your
+      // "Development team for signing the app".
+      isSimulator: true,
+      device: {
+        name: 'My Mac',
+        udid: deviceId,
+        osType: 'macOS',
+      },
+      port: 8081,
+      projectRoot,
+      scheme,
+      shouldSkipInitialBundling: false,
+      shouldStartBundler: true,
+      xcodeProject,
+    };
 
-  console.log(binaryPath);
+    // Spawn the `xcodebuild` process to create the app binary.
+    const buildOutput = await XcodeBuild.buildAsync(buildProps);
 
-  // await uploadGitHubRemoteBuildCache(
-  //   {
-  //     projectRoot: path.resolve(__dirname, '../..'),
-  //     fingerprintHash,
-  //     runOptions,
-  //     // @ts-expect-error Expo is only expecting "android" | "ios"
-  //     platform,
-  //     // Climb up out of Contents/Resources
-  //     buildPath: path.resolve(binaryPath, '../..'),
-  //   },
-  //   { owner: 'shirakaba', repo: 'rnmprebuilds' },
-  // );
+    // '/Users/jamie/Library/Developer/Xcode/DerivedData/rnmprebuilds-cfktnscoesgdwsdwwnwsasezdfqm/Build/Products/Debug/rnmprebuilds.app/Contents/Resources'
+    binaryPath = await XcodeBuild.getAppBinaryPath(buildOutput);
+
+    shouldUpdateBuildCache = true;
+  }
+
+  // TODO: Ensure port hasn't become busy during build
+  // TODO: Start the Metro dev server
+  // TODO: Kill any previous instance of the Mac app.
+  // TODO: Launch the Mac app.
+
+  if (!fingerprintHash) {
+    return;
+  }
+
+  if (shouldUpdateBuildCache) {
+    await uploadGitHubRemoteBuildCache(
+      {
+        projectRoot: path.resolve(__dirname, '../..'),
+        fingerprintHash,
+        runOptions,
+        // @ts-expect-error Expo is only expecting "android" | "ios"
+        platform,
+        // Climb up out of Contents/Resources
+        buildPath: path.resolve(binaryPath, '../..'),
+      },
+      ownerAndRepo,
+    );
+  }
 }
 
 /**
