@@ -49,6 +49,10 @@ async function main() {
   if (help) {
     console.log(
       `
+A 1:1 imitation of of \`expo run ios\` for React Native macOS, except it's only
+concerned with building the app, not running it. Made purely for demoing React
+Native support for build-cache-provider.
+
 Usage: node demo.js
        node demo.js [options]
        node demo.js [-h | --help]

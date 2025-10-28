@@ -48,7 +48,7 @@ async function maybeCacheAppAsync(appPath, cachedAppPath) {
 
 /**
  * @param {string} url
- * @param {"ios" | "android"} platform
+ * @param {"ios" | "android" | "macos"} platform
  * @param {string} [cachedAppPath]
  * @returns {Promise<string>}
  */
@@ -73,7 +73,7 @@ async function downloadAndMaybeExtractAppAsync(url, platform, cachedAppPath) {
 
     const appPath = await getAppPathAsync(
       outputDir,
-      platform === 'ios' ? 'app' : 'apk',
+      platform === 'ios' || platform === 'macos' ? 'app' : 'apk',
     );
 
     return await maybeCacheAppAsync(appPath, cachedAppPath);

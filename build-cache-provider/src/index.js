@@ -156,7 +156,7 @@ function getTagName({ fingerprintHash, projectRoot, runOptions }) {
  * @param {string} arg.fingerprintHash
  * @param {string} arg.projectRoot
  * @param {import("@expo/config").RunOptions} arg.runOptions
- * @param {"ios" | "android"} arg.platform
+ * @param {"ios" | "macos" | "android"} arg.platform
  *
  * @returns {Promise<string>}
  */
@@ -180,7 +180,7 @@ async function getCachedAppPath({
       fingerprintHash,
       projectRoot,
       runOptions,
-    })}.${platform === 'ios' ? 'app' : 'apk'}`,
+    })}.${platform === 'ios' || platform === 'macos' ? 'app' : 'apk'}`,
   );
 }
 
