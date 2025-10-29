@@ -31,12 +31,20 @@ main()
   });
 
 async function main() {
-  const { config, help } = parseArgs({
+  const {
+    cache: enableBuildCacheProvider,
+    config,
+    help,
+  } = parseArgs({
     args: argv.slice(2),
     options: {
       config: {
         type: 'string',
         default: 'Debug',
+      },
+      cache: {
+        type: 'boolean',
+        default: true,
       },
       help: {
         short: 'h',
@@ -44,6 +52,7 @@ async function main() {
         default: false,
       },
     },
+    allowNegative: true,
   }).values;
 
   if (help) {
@@ -60,6 +69,24 @@ Usage: node demo.js
   --config        The build configuration. Accepted values are "Debug" and
                   "Release".
                   Default: "Debug".
+
+  --cache         Enable the build cache provider.
+
+                  If enabled:
+                  - Generate a fingerprint of the current source.
+                  - Check for locally cached builds of the same fingerprint.
+                    - On cache hit, reuse the locally cached build.
+                    - On cache miss, check the remote.
+                      - On cache hit, reuse the remote build.
+                      - On cache miss, build afresh. Store that fresh build into
+                        local cache and upload it to the build cache provider.
+
+                  If disabled, we build afresh every time.
+
+                  Disable by passing --no-cache.
+                  Default: true.
+
+  --no-cache      Disable the build cache provider. See the --cache flag.
 
   -h, --help      Show this help message and exit.
 
@@ -114,7 +141,7 @@ $ node demo.js --config Release
     provider: buildCacheProvider,
   });
 
-  if (!runOptions.binary) {
+  if (!runOptions.binary && enableBuildCacheProvider) {
     const localPath = fingerprintHash
       ? await resolveGitHubRemoteBuildCache(
           {
@@ -176,6 +203,19 @@ $ node demo.js --config Release
       configuration: runOptions.configuration ?? 'Debug',
       // If you set `isSimulator: false`, it prompts you to select your
       // "Development team for signing the app".
+      //
+      // If you set `isSimulator: true`, it skips the prompt and, based on the
+      // below, seems to ad-hoc sign it.
+      //
+      // Codesign verification (verbose=4)
+      // - Signature=adhoc
+      // - TeamIdentifier=not set
+      // - CodeDirectory v=20400 size=472 flags=0x2(adhoc) hashes=4+7 location=embedded
+      // - Sealed Resources version=2 rules=13 files=13
+      //
+      // Codesign verification (verbose=2)
+      // - valid on disk
+      // - satisfies its Designated Requirement
       isSimulator: true,
       device: {
         name: 'My Mac',
@@ -196,7 +236,7 @@ $ node demo.js --config Release
     // '/Users/jamie/Library/Developer/Xcode/DerivedData/rnmprebuilds-cfktnscoesgdwsdwwnwsasezdfqm/Build/Products/Debug/rnmprebuilds.app/Contents/Resources'
     binaryPath = await XcodeBuild.getAppBinaryPath(buildOutput);
 
-    shouldUpdateBuildCache = true;
+    shouldUpdateBuildCache = enableBuildCacheProvider;
   }
 
   // TODO: Ensure port hasn't become busy during build
