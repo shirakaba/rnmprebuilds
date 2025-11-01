@@ -4,8 +4,10 @@
 // Run it as follows:
 // node ./build-cache-provider/scripts/demo.js
 
+const { parseProjectEnv } = require('@expo/env');
 const { exec } = require('node:child_process');
-const { argv } = require('node:process');
+const { argv, exit } = require('node:process');
+const { mkdir, copyFile } = require('node:fs/promises');
 const { promisify, parseArgs } = require('node:util');
 const execAsync = promisify(exec);
 
@@ -21,6 +23,20 @@ const {
   uploadGitHubRemoteBuildCache,
 } = require('../src/index');
 const { calculateFingerprintHashAsync } = require('../src/cli/fingerprint');
+const { createReleaseAndUploadAsset } = require('../src/github');
+const repoPackageJson = require('../../package.json');
+
+const { BUILD_CACHE_PROVIDER_TOKEN } = parseProjectEnv(
+  path.resolve(__dirname, '../..'),
+  {
+    // This determines whether to load `.env.${mode}` and `.env.${mode}.local`.
+    // Possible values are 'development', 'production', and 'test'.
+    //
+    // TODO: Customise for debug vs. release builds, as done in:
+    // node_modules/@expo/cli/build/src/run/ios/runIosAsync.js
+    mode: 'production',
+  },
+).env;
 
 main()
   .then(() => {
@@ -33,6 +49,7 @@ main()
 async function main() {
   const {
     cache: enableBuildCacheProvider,
+    publish,
     config,
     help,
   } = parseArgs({
@@ -45,6 +62,10 @@ async function main() {
       cache: {
         type: 'boolean',
         default: true,
+      },
+      publish: {
+        type: 'boolean',
+        default: false,
       },
       help: {
         short: 'h',
@@ -88,6 +109,12 @@ Usage: node demo.js
 
   --no-cache      Disable the build cache provider. See the --cache flag.
 
+  --publish       As well as publishing a release under the fingerprint, publish
+                  an (Electron Forge compatible) release under the tag for the
+                  currently-installed version of react-native-macos. Requires
+                  --cache to be enabled as well.
+                  Default: false.
+
   -h, --help      Show this help message and exit.
 
 Examples:
@@ -104,6 +131,13 @@ $ node demo.js --config Release
 
   if (config !== 'Release' && config !== 'Debug') {
     return;
+  }
+
+  if (publish && !enableBuildCacheProvider) {
+    console.log(
+      'Got --publish flag without --cache flag. To use --publish, please enable both.',
+    );
+    exit(1);
   }
 
   /** @type {"ios" | "android" | "macos"} */
@@ -248,18 +282,54 @@ $ node demo.js --config Release
     return;
   }
 
+  /** @type {import('@expo/config').UploadBuildCacheProps} */
+  const uploadBuildCacheProps = {
+    projectRoot: path.resolve(__dirname, '../..'),
+    fingerprintHash,
+    runOptions,
+    // @ts-expect-error Expo is only expecting "android" | "ios"
+    platform,
+    // Climb up out of Contents/Resources
+    buildPath: path.resolve(binaryPath, '../..'),
+  };
+
   if (shouldUpdateBuildCache) {
-    await uploadGitHubRemoteBuildCache(
+    await uploadGitHubRemoteBuildCache(uploadBuildCacheProps, ownerAndRepo);
+  }
+
+  // Create a release with the right folder structure and tag name to be
+  // compatible with Electron Fiddle.
+  if (publish) {
+    const tagName = `v${repoPackageJson.dependencies['react-native-macos']}`;
+
+    // Electron Fiddle forms a download URL based on the host architecture.
+    // For now, we assume a blissful ARM-only world.
+    // We need to match the following path to avoid forking
+    // @electron/fiddle-core:
+    //
+    // 'v999.0.0/electron-v999.0.0-darwin-arm64.zip'
+    const outDir = path.resolve(
+      __dirname,
+      `../releases/electron-${tagName}-darwin-arm64`,
+    );
+    await mkdir(outDir, { recursive: true });
+
+    const outFile = path.join(
+      outDir,
+      path.basename(uploadBuildCacheProps.buildPath),
+    );
+
+    await copyFile(uploadBuildCacheProps.buildPath, outFile);
+
+    await uploadGitHubRemoteBuildCacheForElectronFiddle(
       {
-        projectRoot: path.resolve(__dirname, '../..'),
-        fingerprintHash,
-        runOptions,
-        // @ts-expect-error Expo is only expecting "android" | "ios"
-        platform,
-        // Climb up out of Contents/Resources
-        buildPath: path.resolve(binaryPath, '../..'),
+        ...uploadBuildCacheProps,
+        buildPath: outDir,
       },
-      ownerAndRepo,
+      {
+        ...ownerAndRepo,
+        tagName,
+      },
     );
   }
 }
@@ -294,6 +364,51 @@ async function getMyMacIdFromRunDestination({ scheme, workspace, cwd }) {
   throw new Error(
     `Unable to find \"My Mac\" in destinations, given output:\n${output}`,
   );
+}
+
+/**
+ * A slight fork of resolveGitHubRemoteBuildCache() that allows us to alter the
+ * the tag name and compression format to match Electron Fiddle's expectations.
+ *
+ * @param {import("@expo/config").UploadBuildCacheProps} uploadBuildCacheProps
+ * @param {object} options options passed in from app.json.
+ * @param {string} options.owner
+ * @param {string} options.repo
+ * @param {string} options.tagName
+ *
+ * @returns {Promise<string | null>}
+ */
+async function uploadGitHubRemoteBuildCacheForElectronFiddle(
+  { buildPath },
+  { owner, repo, tagName },
+) {
+  if (!BUILD_CACHE_PROVIDER_TOKEN) {
+    console.log(
+      '[build-cache-provider] No BUILD_CACHE_PROVIDER_TOKEN env var found in project env files; build-cache-provider skipping uploadGitHubRemoteBuildCache.',
+    );
+    return null;
+  }
+
+  console.log(`[build-cache-provider] Uploading build to Github Releases`);
+  try {
+    const result = await createReleaseAndUploadAsset({
+      token: BUILD_CACHE_PROVIDER_TOKEN,
+      owner,
+      repo,
+      tagName,
+      binaryPath: buildPath,
+      compressionFormat: 'zip',
+    });
+
+    return result;
+  } catch (error) {
+    console.log('[build-cache-provider] error', error);
+    console.error(
+      '[build-cache-provider] Release failed:',
+      error instanceof Error ? error.message : 'Unknown error',
+    );
+    process.exit(1);
+  }
 }
 
 /**

@@ -5,6 +5,7 @@ const fs = require('fs-extra');
 const { v4: uuidv4 } = require('uuid');
 const { create: createTar } = require('tar');
 const path = require('path');
+const archiver = require('archiver');
 
 const { getTmpDirectory } = require('./helpers');
 
@@ -15,6 +16,7 @@ const { getTmpDirectory } = require('./helpers');
  *   repo: string;
  *   tagName: string;
  *   binaryPath: string;
+ *   compressionFormat?: 'tar' | 'zip';
  * }} GithubProviderOptions
  */
 
@@ -27,6 +29,7 @@ async function createReleaseAndUploadAsset({
   repo,
   tagName,
   binaryPath,
+  compressionFormat = 'tar',
 }) {
   const { Octokit } = await import('@octokit/rest');
 
@@ -66,6 +69,7 @@ async function createReleaseAndUploadAsset({
       repo,
       releaseId: release.data.id,
       binaryPath,
+      compressionFormat,
     });
 
     return release.url;
@@ -155,17 +159,28 @@ async function ensureAnnotatedTag(octokit, params) {
  * @param {string} params.repo
  * @param {number} params.releaseId
  * @param {string} params.binaryPath
+ * @param {'tar' | 'zip'} [params.compressionFormat='tar'] - Compression format to use for directories
  */
 async function uploadReleaseAsset(octokit, params) {
   let filePath = params.binaryPath;
   let name = path.basename(filePath);
+  const compressionFormat = params.compressionFormat || 'tar';
+
   if ((await fs.stat(filePath)).isDirectory()) {
     await fs.mkdirp(await getTmpDirectory());
-    const tarPath = path.join(await getTmpDirectory(), `${uuidv4()}.tar.gz`);
     const parentPath = path.dirname(filePath);
-    await createTar({ cwd: parentPath, file: tarPath, gzip: true }, [name]);
-    filePath = tarPath;
-    name = name + '.tar.gz';
+
+    if (compressionFormat === 'zip') {
+      const zipPath = path.join(await getTmpDirectory(), `${uuidv4()}.zip`);
+      await createZip(filePath, zipPath);
+      filePath = zipPath;
+      name = name + '.zip';
+    } else {
+      const tarPath = path.join(await getTmpDirectory(), `${uuidv4()}.tar.gz`);
+      await createTar({ cwd: parentPath, file: tarPath, gzip: true }, [name]);
+      filePath = tarPath;
+      name = name + '.tar.gz';
+    }
   }
 
   /** @type {string} Type workaround for binary data */
@@ -182,6 +197,29 @@ async function uploadReleaseAsset(octokit, params) {
       'content-type': 'application/octet-stream',
       'content-length': fileData.length.toString(),
     },
+  });
+}
+
+/**
+ * Create a zip archive of a directory
+ * @param {string} sourceDir - Directory to compress
+ * @param {string} outputPath - Path for the output zip file
+ * @returns {Promise<void>}
+ */
+async function createZip(sourceDir, outputPath) {
+  return new Promise((resolve, reject) => {
+    const output = fs.createWriteStream(outputPath);
+    const archive = archiver('zip', {
+      zlib: { level: 9 }, // Maximum compression
+    });
+
+    output.on('close', () => resolve());
+    output.on('error', err => reject(err));
+    archive.on('error', err => reject(err));
+
+    archive.pipe(output);
+    archive.directory(sourceDir, path.basename(sourceDir));
+    archive.finalize();
   });
 }
 
