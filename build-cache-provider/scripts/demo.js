@@ -7,7 +7,7 @@
 const { parseProjectEnv } = require('@expo/env');
 const { exec } = require('node:child_process');
 const { argv, exit } = require('node:process');
-const { mkdir, copyFile } = require('node:fs/promises');
+const { mkdir, cp, writeFile, readFile } = require('node:fs/promises');
 const { promisify, parseArgs } = require('node:util');
 const execAsync = promisify(exec);
 
@@ -189,7 +189,7 @@ $ node demo.js --config Release
         )
       : null;
     if (localPath) {
-      runOptions.binary = localPath;
+      runOptions.binary = localPath; // '/var/folders/0m/nf10bfxx6rgft8tn29fznymc0000gn/T/github-build-cache-provider-nodejs/build-run-cache/fingerprint.2ef37bd3fff12d044bfe0077578bf391731325f3.app'
     }
   }
 
@@ -267,8 +267,13 @@ $ node demo.js --config Release
     // Spawn the `xcodebuild` process to create the app binary.
     const buildOutput = await XcodeBuild.buildAsync(buildProps);
 
+    // Although named "getAppBinaryPath()", for Mac apps, it returns the
+    // Contents/Resources subdirectory, for example:
     // '/Users/jamie/Library/Developer/Xcode/DerivedData/rnmprebuilds-cfktnscoesgdwsdwwnwsasezdfqm/Build/Products/Debug/rnmprebuilds.app/Contents/Resources'
-    binaryPath = await XcodeBuild.getAppBinaryPath(buildOutput);
+    const bundleResourcesPath = await XcodeBuild.getAppBinaryPath(buildOutput);
+
+    // The binaryPath refers to the .app, so we climb out of Contents/Resources.
+    binaryPath = path.resolve(bundleResourcesPath, '../..');
 
     shouldUpdateBuildCache = enableBuildCacheProvider;
   }
@@ -289,8 +294,7 @@ $ node demo.js --config Release
     runOptions,
     // @ts-expect-error Expo is only expecting "android" | "ios"
     platform,
-    // Climb up out of Contents/Resources
-    buildPath: path.resolve(binaryPath, '../..'),
+    buildPath: binaryPath,
   };
 
   if (shouldUpdateBuildCache) {
@@ -308,23 +312,31 @@ $ node demo.js --config Release
     // @electron/fiddle-core:
     //
     // 'v999.0.0/electron-v999.0.0-darwin-arm64.zip'
-    const outDir = path.resolve(
+    const releaseDir = path.resolve(
       __dirname,
       `../releases/electron-${tagName}-darwin-arm64`,
     );
-    await mkdir(outDir, { recursive: true });
+    await mkdir(releaseDir, { recursive: true });
 
-    const outFile = path.join(
-      outDir,
-      path.basename(uploadBuildCacheProps.buildPath),
+    // Electron releases include the following files:
+    // - Electron.app
+    // - version
+    // - LICENSE
+    // - LICENSES.chromium.html
+    // So we'll try to match most of these to improve consistency.
+    const outFile = path.join(releaseDir, 'Electron.app');
+    await cp(uploadBuildCacheProps.buildPath, outFile, { recursive: true });
+
+    await writeFile(path.join(releaseDir, 'version'), tagName);
+    const licence = await readFile(
+      path.resolve(__dirname, '../../LICENSE.txt'),
     );
-
-    await copyFile(uploadBuildCacheProps.buildPath, outFile);
+    await writeFile(path.join(releaseDir, 'LICENSE'), licence);
 
     await uploadGitHubRemoteBuildCacheForElectronFiddle(
       {
         ...uploadBuildCacheProps,
-        buildPath: outDir,
+        buildPath: releaseDir,
       },
       {
         ...ownerAndRepo,

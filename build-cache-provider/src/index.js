@@ -51,6 +51,7 @@ async function resolveGitHubRemoteBuildCache(
   });
   if (fs.existsSync(cachedAppPath)) {
     console.log('[build-cache-provider] Cached build found, skipping download');
+    // '/var/folders/0m/nf10bfxx6rgft8tn29fznymc0000gn/T/github-build-cache-provider-nodejs/build-run-cache/fingerprint.2ef37bd3fff12d044bfe0077578bf391731325f3.app'
     return cachedAppPath;
   }
   if (!BUILD_CACHE_PROVIDER_TOKEN) {
