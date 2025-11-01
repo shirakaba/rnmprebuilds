@@ -218,7 +218,7 @@ async function createZip(sourceDir, outputPath) {
     archive.on('error', err => reject(err));
 
     archive.pipe(output);
-    archive.directory(sourceDir, path.basename(sourceDir));
+    archive.directory(sourceDir, false);
     archive.finalize();
   });
 }
