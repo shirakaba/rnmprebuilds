@@ -7,7 +7,7 @@
 const { parseProjectEnv } = require('@expo/env');
 const { exec } = require('node:child_process');
 const { argv, exit } = require('node:process');
-const { mkdir, cp, writeFile, readFile } = require('node:fs/promises');
+const { mkdir, cp, writeFile, readFile, rm } = require('node:fs/promises');
 const { promisify, parseArgs } = require('node:util');
 const execAsync = promisify(exec);
 
@@ -316,7 +316,8 @@ $ node demo.js --config Release
       __dirname,
       `../releases/electron-${tagName}-darwin-arm64`,
     );
-    await mkdir(releaseDir, { recursive: true });
+    await rm(releaseDir, { recursive: true });
+    await mkdir(releaseDir);
 
     // Electron releases include the following files:
     // - Electron.app
