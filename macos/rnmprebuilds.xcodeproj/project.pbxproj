@@ -19,7 +19,7 @@
 /* Begin PBXFileReference section */
 		13B07F961A680F5B00A75B9A /* rnmprebuilds.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = rnmprebuilds.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3FBDD09B955A3EE1F0219A67 /* Pods-rnmprebuilds-macOS.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-rnmprebuilds-macOS.release.xcconfig"; path = "Target Support Files/Pods-rnmprebuilds-macOS/Pods-rnmprebuilds-macOS.release.xcconfig"; sourceTree = "<group>"; };
-		514201492437B4B30078DB4F /* rnmprebuilds.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = rnmprebuilds.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		514201492437B4B30078DB4F /* Electron.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Electron.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		5142014B2437B4B30078DB4F /* AppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
 		5142014C2437B4B30078DB4F /* AppDelegate.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = AppDelegate.mm; sourceTree = "<group>"; };
 		514201512437B4B40078DB4F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -110,7 +110,7 @@
 			isa = PBXGroup;
 			children = (
 				13B07F961A680F5B00A75B9A /* rnmprebuilds.app */,
-				514201492437B4B30078DB4F /* rnmprebuilds.app */,
+				514201492437B4B30078DB4F /* Electron.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -154,7 +154,7 @@
 			);
 			name = "rnmprebuilds-macOS";
 			productName = rnmprebuilds;
-			productReference = 514201492437B4B30078DB4F /* rnmprebuilds.app */;
+			productReference = 514201492437B4B30078DB4F /* Electron.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -360,7 +360,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "org.reactjs.native.$(PRODUCT_NAME:rfc1034identifier)";
+				PRODUCT_BUNDLE_IDENTIFIER = uk.co.birchlabs.rnfiddleclient;
 				PRODUCT_NAME = rnmprebuilds;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -381,7 +381,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "org.reactjs.native.$(PRODUCT_NAME:rfc1034identifier)";
+				PRODUCT_BUNDLE_IDENTIFIER = uk.co.birchlabs.rnfiddleclient;
 				PRODUCT_NAME = rnmprebuilds;
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
@@ -405,7 +405,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "org.reactjs.native.$(PRODUCT_NAME:rfc1034identifier)";
+				PRODUCT_BUNDLE_IDENTIFIER = uk.co.birchlabs.rnfiddleclient;
 				PRODUCT_NAME = Electron;
 				SDKROOT = macosx;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -429,7 +429,7 @@
 					"-ObjC",
 					"-lc++",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "org.reactjs.native.$(PRODUCT_NAME:rfc1034identifier)";
+				PRODUCT_BUNDLE_IDENTIFIER = uk.co.birchlabs.rnfiddleclient;
 				PRODUCT_NAME = Electron;
 				SDKROOT = macosx;
 				SWIFT_VERSION = 5.0;
