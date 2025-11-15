@@ -1,97 +1,76 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# React Native macOS prebuilds
 
-# Getting Started
+## About
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+This repository contains prebuilt React Native macOS clients.
 
-## Step 1: Start Metro
+Just as [Electron Fiddle](https://github.com/electron/fiddle) launches ready-built Electron clients to run fiddles, [React Native Fiddle](https://github.com/shirakaba/react-native-fiddle) launches ready-build React Native macOS clients to run fiddles. This repo is the factory that produces those ready-built clients.
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+### What's in the client?
 
-To start the Metro dev server, run the following command from the root of your React Native project:
-
-```sh
-# Using npm
-npm start
-
-# OR using Yarn
-yarn start
-```
-
-## Step 2: Build and run your app
-
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
+The clients are (for the most part) simply Hello World templates created by following the instructions in the React Native macOS [docs](https://microsoft.github.io/react-native-macos/docs/getting-started).
 
 ```sh
-# Using npm
-npm run android
+# Create a new React Native app via the React Native Community CLI template:
+# https://github.com/react-native-community/template/tree/0.79-stable/template
+npx @react-native-community/cli init rnmprebuilds --version 0.79
 
-# OR using Yarn
-yarn android
+# Add React Native macOS on top:
+# https://github.com/microsoft/react-native-macos/tree/0.79-stable/packages/helloworld
+npx react-native-macos-init@latest --version 0.79.0
 ```
 
-### iOS
+### Deviations from the templates
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+Minimal tweaks may be applied in case the templates or dependencies have any issues causing build failures (see the commit history for full details).
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+On top of that, we make some self-serving changes for the sake of [React Native Fiddle](https://github.com/shirakaba/react-native-fiddle), a mod of [Electron Fiddle](https://github.com/electron/fiddle).
+
+#### Rename to "Electron"
+
+To minimise divergence from the upstream Electron Fiddle as much as possible, we've renamed this client to `Electron.app`, and have also renamed the binary inside it to `Electron`. This will cause some confusion in places, but please bear with it.
+
+#### The dev reload trigger file
+
+The client listens for file changes at:
+
+```
+~/Library/Application Support/uk.co.birchlabs.rnfiddleclient/trigger-reload.txt
+```
+
+This crude IPC channel allows React Native Fiddle to trigger a dev reload of the client without prompting for TCC permissions even when the client lacks focus.
+
+## Notes to self
+
+Here's how I use this repo:
 
 ```sh
-bundle install
+# Install npm dependencies
+bun install
+
+# Install CocoaPods
+cd macos
+pod install
+cd ..
+
+# Now generate a fine-grained GitHub Personal Access Token here:
+# https://github.com/settings/personal-access-tokens
+# - It should have access to the rnmprebuilds repo.
+# - It should also have the following repository permissions:
+#   - Read access to metadata.
+#   - Read and Write access to code.
+# Write it into .env.local in the format: `BUILD_CACHE_PROVIDER_TOKEN=github_pat_***`
+touch .env.local
+
+# To replace an existing v0.79.0 release, first delete the release from the
+# GitHub Releases page: https://github.com/shirakaba/rnmprebuilds/releases
+#
+# Next, delete the v0.79.0 tag.
+#
+# Finally, run this command from the repo root:
+node ./build-cache-provider/scripts/demo.js --publish
 ```
 
-Then, and every time you update your native dependencies, run:
+You may ask what exactly this script does. In `build-cache-provider/scripts/demo.js`, I've re-implemented most of the `expo run ios` command to support React Native macOS, right down to [Expo Fingerprint](https://expo.dev/blog/fingerprint-your-native-runtime) and the [build cache provider](https://expo.dev/blog/build-cache-providers-in-expo). This is normally offered through EAS, but I adapted Expo's official [example](https://github.com/expo/examples/tree/master/with-github-remote-build-cache-provider) of how to set up a self-hosted build cache provider, again adapting it to support React Native macOS.
 
-```sh
-bundle exec pod install
-```
-
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
-
-```sh
-# Using npm
-npm run ios
-
-# OR using Yarn
-yarn ios
-```
-
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+Put it all together and I have a way to generate an ad hoc signed debug-configuration build of the client and push it straight to GitHub Releases under the appropriate version tag, e.g. `v0.79.0`. It also pushes a build tagged with the fingerprint (e.g. `fingerprint.78a05957a66a7b75e56f2f06981173bc448677a4`) while it's at it, mainly for the self-serving purpose that I can more easily pick up the CLI script as-is and use it in other projects as a sort of `expo run macos` command in future.
