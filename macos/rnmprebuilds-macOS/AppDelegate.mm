@@ -2,6 +2,7 @@
 
 #import <React/RCTBundleURLProvider.h>
 #import <ReactAppDependencyProvider/RCTAppDependencyProvider.h>
+#import <React/RCTReloadCommand.h>
 
 @implementation AppDelegate
 
@@ -13,8 +14,63 @@
   self.initialProps = @{};
   self.dependencyProvider = [RCTAppDependencyProvider new];
   
+  /// Apple Events are processed without app focus, but require TCC permissions. Trigger as follows:
+  /// ```sh
+  /// osascript -e '
+  /// tell application "Electron"
+  ///     «event MYEVCMD1» "payload text"
+  /// end tell
+  /// '
+  /// ```
+  [[NSAppleEventManager sharedAppleEventManager]
+      setEventHandler:self
+           andSelector:@selector(handleEvent:withReplyEvent:)
+        forEventClass:'MYEV'
+           andEventID:'CMD1'];
+  
+  /// DistributedNotifications require app focus to be processed, but don't require TCC permissions. Trigger as follows:
+  /// ```sh
+  /// swift -e 'import Foundation; DistributedNotificationCenter.default.post(name: Notification.Name("com.example.MyCommand"), object: nil, userInfo: ["action":"test"])'
+  /// ```
+  [[NSDistributedNotificationCenter defaultCenter]
+      addObserverForName:@"com.example.MyCommand"
+                  object:nil
+                   queue:[NSOperationQueue mainQueue]
+              usingBlock:^(NSNotification * _Nonnull notification) {
+      
+      NSDictionary *userInfo = notification.userInfo;
+      if (!userInfo) {
+          userInfo = @{};
+      }
+    
+      NSLog(@"Received notification: %@", userInfo);
+      RCTTriggerReloadCommandListeners(@"programmatic reload");
+  }];
+  
   return [super applicationDidFinishLaunching:notification];
 }
+
+- (void)handleEvent:(NSAppleEventDescriptor *)event
+    withReplyEvent:(NSAppleEventDescriptor *)replyEvent
+{
+    NSAppleEventDescriptor *param = [event paramDescriptorForKeyword:keyDirectObject];
+
+    NSString *payload = nil;
+    if (param && param.descriptorType == typeUTF8Text) {
+        payload = param.stringValue;
+    }
+
+    NSLog(@"Received custom Apple Event: class='MYEV' id='CMD1' payload='%@'", payload);
+  
+    if (replyEvent) {
+        NSAppleEventDescriptor *replyString =
+            [NSAppleEventDescriptor descriptorWithString:@"Message received! Reloading..."];
+        [replyEvent setDescriptor:replyString forKeyword:keyDirectObject];
+    }
+  
+    RCTTriggerReloadCommandListeners(@"programmatic reload");
+}
+
 
 - (NSURL *)sourceURLForBridge:(RCTBridge *)bridge
 {
