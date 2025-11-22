@@ -316,7 +316,17 @@ $ node demo.js --config Release
       __dirname,
       `../releases/electron-${tagName}-darwin-arm64`,
     );
-    await rm(releaseDir, { recursive: true });
+    try {
+      await rm(releaseDir, { recursive: true });
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !('code' in error) ||
+        error.code !== 'ENOENT'
+      ) {
+        throw error;
+      }
+    }
     await mkdir(releaseDir);
 
     // Electron releases include the following files:
