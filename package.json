@@ -14,7 +14,7 @@
     "@expo/fingerprint": "0.15.2",
     "react": "19.0.0",
     "react-native": "0.79.6",
-    "react-native-macos": "0.79.0"
+    "react-native-macos": "0.79.1"
   },
   "devDependencies": {
     "@babel/core": "7.28.5",
@@ -43,5 +43,8 @@
   },
   "workspaces": [
     "build-cache-provider"
-  ]
+  ],
+  "patchedDependencies": {
+    "react-native-macos@0.79.1": "patches/react-native-macos@0.79.1.patch"
+  }
 }
