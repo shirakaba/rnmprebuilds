@@ -26,10 +26,6 @@ Minimal tweaks may be applied in case the templates or dependencies have any iss
 
 On top of that, we make some self-serving changes for the sake of [React Native Fiddle](https://github.com/shirakaba/react-native-fiddle), a mod of [Electron Fiddle](https://github.com/electron/fiddle).
 
-#### Rename to "Electron"
-
-To minimise divergence from the upstream Electron Fiddle as much as possible, we've renamed this client to `Electron.app`, and have also renamed the binary inside it to `Electron`. This will cause some confusion in places, but please bear with it.
-
 #### The dev reload trigger file
 
 The client listens for file changes at:

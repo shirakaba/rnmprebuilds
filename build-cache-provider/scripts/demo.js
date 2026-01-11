@@ -335,7 +335,7 @@ $ node demo.js --config Release
     // - LICENSE
     // - LICENSES.chromium.html
     // So we'll try to match most of these to improve consistency.
-    const outFile = path.join(releaseDir, 'Electron.app');
+    const outFile = path.join(releaseDir, 'React Native.app');
     await cp(uploadBuildCacheProps.buildPath, outFile, { recursive: true });
 
     await writeFile(path.join(releaseDir, 'version'), tagName);
