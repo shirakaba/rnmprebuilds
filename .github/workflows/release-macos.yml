@@ -73,6 +73,18 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: node ./build-cache-provider/scripts/demo.js --config Debug --cache --publish --tag "$RELEASE_TAG"
 
+      - name: Write release summary
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          RELEASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${RELEASE_TAG}"
+          {
+            echo "## Release"
+            echo
+            echo "- Tag: [\`${RELEASE_TAG}\`](${RELEASE_URL})"
+            echo "- Release: [Open release](${RELEASE_URL})"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v3
         with:
