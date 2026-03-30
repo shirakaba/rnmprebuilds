@@ -265,8 +265,14 @@ async function deleteTagIfExists(octokit, { owner, repo, tag }) {
       ref: `tags/${tag}`,
     });
   } catch (error) {
-    // @ts-ignore
-    if (error?.status !== 404) {
+    const status = error?.status;
+    const message =
+      error instanceof Error ? error.message : String(error ?? '');
+
+    if (
+      status !== 404 &&
+      !(status === 422 && message.includes('Reference does not exist'))
+    ) {
       throw error;
     }
   }
