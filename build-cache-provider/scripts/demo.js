@@ -38,6 +38,7 @@ async function main() {
     cache: enableBuildCacheProvider,
     publish,
     config,
+    tag: tagFlag,
     help,
   } = parseArgs({
     args: argv.slice(2),
@@ -53,6 +54,10 @@ async function main() {
       publish: {
         type: 'boolean',
         default: false,
+      },
+      tag: {
+        type: 'string',
+        default: 'auto',
       },
       help: {
         short: 'h',
@@ -97,6 +102,11 @@ Usage: node demo.js
                   for the currently-installed version of react-native-macos.
                   Default: false.
 
+  --tag           Release tag to publish under. Use "auto" to derive from
+                  react-native-macos in package.json, or pass an explicit
+                  vX.Y.Z tag.
+                  Default: "auto".
+
   -h, --help      Show this help message and exit.
 
 Examples:
@@ -113,6 +123,19 @@ $ node demo.js --config Release
 
   if (config !== 'Release' && config !== 'Debug') {
     return;
+  }
+
+  /** @type {`v${number}.${number}.${number}`} */
+  let tagName;
+  if (tagFlag === 'auto') {
+    tagName = getReactNativeMacosReleaseTagName();
+  } else if (isSimpleSemanticVersionWithPrefix(tagFlag)) {
+    tagName = tagFlag;
+  } else {
+    console.error(
+      `[demo] Expected --tag to be "auto" or a plain vX.Y.Z tag, got "${tagFlag}".`,
+    );
+    exit(1);
   }
 
   if (publish && !enableBuildCacheProvider) {
@@ -287,10 +310,6 @@ $ node demo.js --config Release
   // Create a release with the right folder structure and tag name to be
   // compatible with Electron Fiddle.
   if (publish) {
-    // TODO: Stop hard-coding this once we're happy it works.
-    // const tagName = getReactNativeMacosReleaseTagName();
-    const tagName = 'v0.79.2';
-
     // Electron Fiddle forms a download URL based on the host architecture.
     // For now, we assume a blissful ARM-only world.
     // We need to match the following path to avoid forking
@@ -423,18 +442,35 @@ async function uploadGitHubRemoteBuildCacheForElectronFiddle(
   }
 }
 
-/** @returns {`v${number}.${number}.${number}`} */
+/**
+ * @returns {`v${number}.${number}.${number}`}
+ */
 function getReactNativeMacosReleaseTagName() {
   const version = repoPackageJson.dependencies['react-native-macos'];
-  if (!/^\d+\.\d+\.\d+$/.test(version)) {
+  if (!isSimpleSemanticVersion(version)) {
     console.error(
       `[demo] Expected react-native-macos to be a plain x.y.z version, got "${version}".`,
     );
     exit(1);
   }
 
-  // @ts-ignore
   return `v${version}`;
+}
+
+/**
+ * @param {string} tag
+ * @returns {tag is `${number}.${number}.${number}`}
+ */
+function isSimpleSemanticVersion(tag) {
+  return /^\d+\.\d+\.\d+$/.test(tag);
+}
+
+/**
+ * @param {string} tag
+ * @returns {tag is `v${number}.${number}.${number}`}
+ */
+function isSimpleSemanticVersionWithPrefix(tag) {
+  return /^v\d+\.\d+\.\d+$/.test(tag);
 }
 
 /**

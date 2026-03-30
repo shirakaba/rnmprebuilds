@@ -13,6 +13,8 @@ jobs:
     # https://github.com/actions/runner-images
     # https://github.com/actions/runner-images/blob/main/images/macos/macos-26-arm64-Readme.md
     runs-on: macos-26
+    env:
+      RELEASE_TAG: v0.79.2
 
     steps:
       - name: Check out repository
@@ -37,10 +39,23 @@ jobs:
       - name: Resolve release version
         id: version
         run: |
-          VERSION="$(node -p "const version = require('./package.json').dependencies['react-native-macos']; if (!/^\\d+\\.\\d+\\.\\d+$/.test(version)) { throw new Error(\`Expected react-native-macos to be x.y.z, got ${version}\`); } version;")"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
-          echo "asset_path=build-cache-provider/releases/electron-v$VERSION-darwin-arm64.zip" >> "$GITHUB_OUTPUT"
+          if [ "$RELEASE_TAG" = "auto" ]; then
+            TAG="v$(node -p 'require("./package.json").dependencies["react-native-macos"]')"
+          else
+            TAG="$RELEASE_TAG"
+          fi
+
+          case "$TAG" in
+            v[0-9]*.[0-9]*.[0-9]*) ;;
+            *)
+              echo "Expected RELEASE_TAG to resolve to a plain vX.Y.Z tag, got $TAG" >&2
+              exit 1
+              ;;
+          esac
+
+          ASSET_PATH="build-cache-provider/releases/electron-$TAG-darwin-arm64.zip"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "asset_path=$ASSET_PATH" >> "$GITHUB_OUTPUT"
 
       - name: Install JavaScript dependencies
         run: bun install --frozen-lockfile
@@ -53,7 +68,7 @@ jobs:
         env:
           CI: true
           GITHUB_TOKEN: ${{ github.token }}
-        run: node ./build-cache-provider/scripts/demo.js --config Debug --cache --publish
+        run: node ./build-cache-provider/scripts/demo.js --config Debug --cache --publish --tag "$RELEASE_TAG"
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v2
