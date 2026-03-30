@@ -279,6 +279,7 @@ $ node demo.js --config Release
     buildPath: binaryPath,
   };
 
+  console.log(`DEBUG: shouldUpdateBuildCache: ${shouldUpdateBuildCache}`);
   if (shouldUpdateBuildCache) {
     await uploadGitHubRemoteBuildCache(uploadBuildCacheProps, ownerAndRepo);
   }
@@ -286,7 +287,9 @@ $ node demo.js --config Release
   // Create a release with the right folder structure and tag name to be
   // compatible with Electron Fiddle.
   if (publish) {
-    const tagName = getReactNativeMacosReleaseTagName();
+    // TODO: Stop hard-coding this once we're happy it works.
+    // const tagName = getReactNativeMacosReleaseTagName();
+    const tagName = 'v0.79.2';
 
     // Electron Fiddle forms a download URL based on the host architecture.
     // For now, we assume a blissful ARM-only world.
