@@ -265,15 +265,26 @@ async function deleteTagIfExists(octokit, { owner, repo, tag }) {
       ref: `tags/${tag}`,
     });
   } catch (error) {
-    const status = error?.status;
-    const message =
-      error instanceof Error ? error.message : String(error ?? '');
-
-    if (
-      status !== 404 &&
-      !(status === 422 && message.includes('Reference does not exist'))
-    ) {
+    if (!(error instanceof Error)) {
       throw error;
+    }
+
+    const { message } = error;
+    // The 'status' property comes from Octokit's RequestError class. I'm
+    // avoiding doing an `instanceof` check because it's a bit of a pain to
+    // access when we're lazy-loading Octokit.
+    if ('status' in error) {
+      const { status } = error;
+      if (status === 404) {
+        // No existing tag. Not an error for our purposes.
+      } else if (
+        status === 422 &&
+        message.includes('Reference does not exist')
+      ) {
+        // No existing tag. Not an error for our purposes.
+      } else {
+        throw error;
+      }
     }
   }
 }
