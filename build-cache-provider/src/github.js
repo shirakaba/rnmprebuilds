@@ -207,10 +207,27 @@ async function ensureAnnotatedTag(octokit, params) {
     });
     // Return existing tag SHA
     return existingRef.object.sha;
-  } catch (err) {
-    // @ts-ignore
-    if (err.status !== 404) {
-      throw err;
+  } catch (error) {
+    if (!(error instanceof Error)) {
+      throw error;
+    }
+
+    const { message } = error;
+    // The 'status' property comes from Octokit's RequestError class. I'm
+    // avoiding doing an `instanceof` check because it's a bit of a pain to
+    // access when we're lazy-loading Octokit.
+    if ('status' in error) {
+      const { status } = error;
+      if (status === 404) {
+        // No existing tag. Not an error for our purposes.
+      } else if (
+        status === 422 &&
+        message.includes('Reference does not exist')
+      ) {
+        // No existing tag. Not an error for our purposes.
+      } else {
+        throw error;
+      }
     }
   }
 
@@ -270,9 +287,6 @@ async function deleteTagIfExists(octokit, { owner, repo, tag }) {
     }
 
     const { message } = error;
-    // The 'status' property comes from Octokit's RequestError class. I'm
-    // avoiding doing an `instanceof` check because it's a bit of a pain to
-    // access when we're lazy-loading Octokit.
     if ('status' in error) {
       const { status } = error;
       if (status === 404) {
