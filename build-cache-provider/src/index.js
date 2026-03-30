@@ -1,32 +1,14 @@
 // A TS->JS port of:
 // https://github.com/expo/examples/blob/master/with-github-remote-build-cache-provider/build-cache-provider/src/index.ts
 
-const { parseProjectEnv } = require('@expo/env');
-const process = require('node:process');
 const path = require('node:path');
 const fs = require('node:fs');
+const { cp, mkdir, rm } = require('node:fs/promises');
 
 const {
   isDevClientBuild,
   getBuildRunCacheDirectoryPath,
 } = require('./helpers');
-const {
-  getReleaseAssetsByTag,
-  createReleaseAndUploadAsset,
-} = require('./github');
-const { downloadAndMaybeExtractAppAsync } = require('./download');
-
-const { BUILD_CACHE_PROVIDER_TOKEN } = parseProjectEnv(
-  path.resolve(__dirname, '../..'),
-  {
-    // This determines whether to load `.env.${mode}` and `.env.${mode}.local`.
-    // Possible values are 'development', 'production', and 'test'.
-    //
-    // TODO: Customise for debug vs. release builds, as done in:
-    // node_modules/@expo/cli/build/src/run/ios/runIosAsync.js
-    mode: 'production',
-  },
-).env;
 
 /**
  *
@@ -51,41 +33,12 @@ async function resolveGitHubRemoteBuildCache(
   });
   if (fs.existsSync(cachedAppPath)) {
     console.log('[build-cache-provider] Cached build found, skipping download');
-    // '/var/folders/0m/nf10bfxx6rgft8tn29fznymc0000gn/T/github-build-cache-provider-nodejs/build-run-cache/fingerprint.2ef37bd3fff12d044bfe0077578bf391731325f3.app'
     return cachedAppPath;
   }
-  if (!BUILD_CACHE_PROVIDER_TOKEN) {
-    console.log(
-      '[build-cache-provider] No BUILD_CACHE_PROVIDER_TOKEN env var found in project env files; build-cache-provider skipping resolveGitHubRemoteBuildCache.',
-    );
-    return null;
-  }
-  console.log(
-    `[build-cache-provider] Searching builds with matching fingerprint on Github Releases`,
-  );
-  try {
-    const assets = await getReleaseAssetsByTag({
-      token: BUILD_CACHE_PROVIDER_TOKEN,
-      owner,
-      repo,
-      tag: getTagName({
-        fingerprintHash,
-        projectRoot,
-        runOptions,
-      }),
-    });
 
-    const buildDownloadURL = assets[0].browser_download_url;
-    return await downloadAndMaybeExtractAppAsync(
-      buildDownloadURL,
-      platform,
-      cachedAppPath,
-    );
-  } catch (error) {
-    console.log(
-      '[build-cache-provider] No cached builds available for this fingerprint',
-    );
-  }
+  console.log(
+    '[build-cache-provider] No local cached build available for this fingerprint.',
+  );
   return null;
 }
 exports.resolveGitHubRemoteBuildCache = resolveGitHubRemoteBuildCache;
@@ -100,38 +53,31 @@ exports.resolveGitHubRemoteBuildCache = resolveGitHubRemoteBuildCache;
  * @returns {Promise<string | null>}
  */
 async function uploadGitHubRemoteBuildCache(
-  { projectRoot, fingerprintHash, runOptions, buildPath },
+  { projectRoot, platform, fingerprintHash, runOptions, buildPath },
   { owner, repo },
 ) {
-  if (!BUILD_CACHE_PROVIDER_TOKEN) {
-    console.log(
-      '[build-cache-provider] No BUILD_CACHE_PROVIDER_TOKEN env var found in project env files; build-cache-provider skipping uploadGitHubRemoteBuildCache.',
-    );
-    return null;
-  }
+  const cachedAppPath = await getCachedAppPath({
+    fingerprintHash,
+    platform,
+    projectRoot,
+    runOptions,
+  });
 
-  console.log(`[build-cache-provider] Uploading build to Github Releases`);
+  console.log(
+    '[build-cache-provider] Storing build in the local fingerprint cache.',
+  );
   try {
-    const result = await createReleaseAndUploadAsset({
-      token: BUILD_CACHE_PROVIDER_TOKEN,
-      owner,
-      repo,
-      tagName: getTagName({
-        fingerprintHash,
-        projectRoot,
-        runOptions,
-      }),
-      binaryPath: buildPath,
-    });
-
-    return result;
+    await mkdir(path.dirname(cachedAppPath), { recursive: true });
+    await rm(cachedAppPath, { recursive: true, force: true });
+    await cp(buildPath, cachedAppPath, { recursive: true });
+    return cachedAppPath;
   } catch (error) {
     console.log('[build-cache-provider] error', error);
     console.error(
-      '[build-cache-provider] Release failed:',
+      '[build-cache-provider] Local cache update failed:',
       error instanceof Error ? error.message : 'Unknown error',
     );
-    process.exit(1);
+    throw error;
   }
 }
 exports.uploadGitHubRemoteBuildCache = uploadGitHubRemoteBuildCache;

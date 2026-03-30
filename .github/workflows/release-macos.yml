@@ -1,0 +1,58 @@
+name: Release macOS Prebuild
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: macos-15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - name: Resolve release version
+        id: version
+        run: |
+          VERSION="$(node -p "const version = require('./package.json').dependencies['react-native-macos']; if (!/^\\d+\\.\\d+\\.\\d+$/.test(version)) { throw new Error(\`Expected react-native-macos to be x.y.z, got ${version}\`); } version;")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "asset_path=build-cache-provider/releases/electron-v$VERSION-darwin-arm64.zip" >> "$GITHUB_OUTPUT"
+
+      - name: Install JavaScript dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Install CocoaPods
+        working-directory: macos
+        run: bundle exec pod install
+
+      - name: Build and publish release
+        env:
+          CI: true
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node ./build-cache-provider/scripts/demo.js --config Debug --no-cache --publish
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: ${{ steps.version.outputs.asset_path }}

@@ -1,22 +1,27 @@
 // A TS->JS port of:
 // https://github.com/expo/examples/blob/master/with-github-remote-build-cache-provider/build-cache-provider/src/github.ts
 
+const { parseProjectEnv } = require('@expo/env');
 const fs = require('fs-extra');
 const { v4: uuidv4 } = require('uuid');
 const { create: createTar } = require('tar');
 const path = require('path');
+const process = require('node:process');
+const { execFileSync } = require('node:child_process');
 const archiver = require('archiver');
 
 const { getTmpDirectory } = require('./helpers');
 
 /**
  * @typedef {{
- *   token: string;
+ *   token?: string;
  *   owner: string;
  *   repo: string;
  *   tagName: string;
  *   binaryPath: string;
  *   compressionFormat?: 'tar' | 'zip';
+ *   replaceExisting?: boolean;
+ *   targetCommitish?: string;
  * }} GithubProviderOptions
  */
 
@@ -30,13 +35,19 @@ async function createReleaseAndUploadAsset({
   tagName,
   binaryPath,
   compressionFormat = 'tar',
+  replaceExisting = false,
+  targetCommitish,
 }) {
-  const { Octokit } = await import('@octokit/rest');
-
-  const octokit = new Octokit({ auth: token });
+  const octokit = await createOctokit({ token });
 
   try {
-    const commitSha = await getBranchShaWithFallback(octokit, owner, repo);
+    const commitSha =
+      targetCommitish || (await getCurrentCommitShaAsync(octokit, owner, repo));
+
+    if (replaceExisting) {
+      await deleteReleaseByTagIfExists(octokit, { owner, repo, tag: tagName });
+      await deleteTagIfExists(octokit, { owner, repo, tag: tagName });
+    }
 
     // Original Expo example captures return value but doesn't do anything with
     // it.
@@ -60,8 +71,9 @@ async function createReleaseAndUploadAsset({
       repo,
       tag_name: tagName,
       name: tagName,
+      target_commitish: commitSha,
       draft: false,
-      prerelease: true,
+      prerelease: false,
     });
 
     await uploadReleaseAsset(octokit, {
@@ -82,6 +94,70 @@ async function createReleaseAndUploadAsset({
   }
 }
 exports.createReleaseAndUploadAsset = createReleaseAndUploadAsset;
+
+/**
+ *
+ * @param {object} obj
+ * @param {string} [obj.token]
+ * @returns
+ */
+async function createOctokit({ token }) {
+  const { Octokit } = await import('@octokit/rest');
+  const authToken = token ?? getGitHubAuthToken();
+
+  if (!authToken) {
+    throw new Error(
+      'No GitHub auth token found. Set BUILD_CACHE_PROVIDER_TOKEN in .env.local for local releases, or rely on GITHUB_TOKEN in GitHub Actions.',
+    );
+  }
+
+  return new Octokit({ auth: authToken });
+}
+
+/**
+ * @returns {string | null}
+ */
+function getGitHubAuthToken() {
+  if (process.env.GITHUB_TOKEN) {
+    return process.env.GITHUB_TOKEN;
+  }
+
+  if (process.env.GH_TOKEN) {
+    return process.env.GH_TOKEN;
+  }
+
+  if (process.env.BUILD_CACHE_PROVIDER_TOKEN) {
+    return process.env.BUILD_CACHE_PROVIDER_TOKEN;
+  }
+
+  const env = parseProjectEnv(path.resolve(__dirname, '../..'), {
+    mode: 'production',
+  }).env;
+
+  return env.BUILD_CACHE_PROVIDER_TOKEN ?? null;
+}
+exports.getGitHubAuthToken = getGitHubAuthToken;
+
+/**
+ * @param {import("@octokit/rest").Octokit} octokit
+ * @param {string} owner
+ * @param {string} repo
+ * @returns {Promise<string>}
+ */
+async function getCurrentCommitShaAsync(octokit, owner, repo) {
+  if (process.env.GITHUB_SHA) {
+    return process.env.GITHUB_SHA;
+  }
+
+  try {
+    return execFileSync('git', ['rev-parse', 'HEAD'], {
+      cwd: path.resolve(__dirname, '../..'),
+      encoding: 'utf8',
+    }).trim();
+  } catch {
+    return await getBranchShaWithFallback(octokit, owner, repo);
+  }
+}
 
 /**
  * @param {import("@octokit/rest").Octokit} octokit
@@ -150,6 +226,75 @@ async function ensureAnnotatedTag(octokit, params) {
   });
 
   return tagData.sha;
+}
+
+/**
+ * @param {import("@octokit/rest").Octokit} octokit
+ * @param {object} params
+ * @param {string} params.owner
+ * @param {string} params.repo
+ * @param {string} params.tag
+ * @returns {Promise<void>}
+ */
+async function deleteReleaseByTagIfExists(octokit, { owner, repo, tag }) {
+  const release = await getReleaseByTagOrNull(octokit, { owner, repo, tag });
+  if (!release) {
+    return;
+  }
+
+  await octokit.rest.repos.deleteRelease({
+    owner,
+    repo,
+    release_id: release.id,
+  });
+}
+
+/**
+ * @param {import("@octokit/rest").Octokit} octokit
+ * @param {object} params
+ * @param {string} params.owner
+ * @param {string} params.repo
+ * @param {string} params.tag
+ * @returns {Promise<void>}
+ */
+async function deleteTagIfExists(octokit, { owner, repo, tag }) {
+  try {
+    await octokit.rest.git.deleteRef({
+      owner,
+      repo,
+      ref: `tags/${tag}`,
+    });
+  } catch (error) {
+    // @ts-ignore
+    if (error?.status !== 404) {
+      throw error;
+    }
+  }
+}
+
+/**
+ * @param {import("@octokit/rest").Octokit} octokit
+ * @param {object} params
+ * @param {string} params.owner
+ * @param {string} params.repo
+ * @param {string} params.tag
+ * @returns {Promise<import("@octokit/plugin-rest-endpoint-methods").RestEndpointMethodTypes["repos"]["getReleaseByTag"]["response"]["data"] | null>}
+ */
+async function getReleaseByTagOrNull(octokit, { owner, repo, tag }) {
+  try {
+    const release = await octokit.rest.repos.getReleaseByTag({
+      owner,
+      repo,
+      tag,
+    });
+    return release.data;
+  } catch (error) {
+    // @ts-ignore
+    if (error?.status === 404) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 /**
@@ -232,9 +377,7 @@ async function createZip(sourceDir, outputPath) {
  * @param {string} arg.tag
  */
 async function getReleaseAssetsByTag({ token, owner, repo, tag }) {
-  const { Octokit } = await import('@octokit/rest');
-
-  const octokit = new Octokit({ auth: token });
+  const octokit = await createOctokit({ token });
   const release = await octokit.rest.repos.getReleaseByTag({
     owner,
     repo,
@@ -243,3 +386,5 @@ async function getReleaseAssetsByTag({ token, owner, repo, tag }) {
   return release.data.assets;
 }
 exports.getReleaseAssetsByTag = getReleaseAssetsByTag;
+
+exports.createZip = createZip;

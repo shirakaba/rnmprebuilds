@@ -4,9 +4,8 @@
 // Run it as follows:
 // node ./build-cache-provider/scripts/demo.js
 
-const { parseProjectEnv } = require('@expo/env');
 const { exec } = require('node:child_process');
-const { argv, exit } = require('node:process');
+const { argv, exit, env } = require('node:process');
 const { mkdir, cp, writeFile, readFile, rm } = require('node:fs/promises');
 const { promisify, parseArgs } = require('node:util');
 const execAsync = promisify(exec);
@@ -23,20 +22,8 @@ const {
   uploadGitHubRemoteBuildCache,
 } = require('../src/index');
 const { calculateFingerprintHashAsync } = require('../src/cli/fingerprint');
-const { createReleaseAndUploadAsset } = require('../src/github');
+const { createReleaseAndUploadAsset, createZip } = require('../src/github');
 const repoPackageJson = require('../../package.json');
-
-const { BUILD_CACHE_PROVIDER_TOKEN } = parseProjectEnv(
-  path.resolve(__dirname, '../..'),
-  {
-    // This determines whether to load `.env.${mode}` and `.env.${mode}.local`.
-    // Possible values are 'development', 'production', and 'test'.
-    //
-    // TODO: Customise for debug vs. release builds, as done in:
-    // node_modules/@expo/cli/build/src/run/ios/runIosAsync.js
-    mode: 'production',
-  },
-).env;
 
 main()
   .then(() => {
@@ -95,12 +82,9 @@ Usage: node demo.js
 
                   If enabled:
                   - Generate a fingerprint of the current source.
-                  - Check for locally cached builds of the same fingerprint.
+                  - Check for a locally cached build of the same fingerprint.
                     - On cache hit, reuse the locally cached build.
-                    - On cache miss, check the remote.
-                      - On cache hit, reuse the remote build.
-                      - On cache miss, build afresh. Store that fresh build into
-                        local cache and upload it to the build cache provider.
+                    - On cache miss, build afresh and store it locally.
 
                   If disabled, we build afresh every time.
 
@@ -109,10 +93,8 @@ Usage: node demo.js
 
   --no-cache      Disable the build cache provider. See the --cache flag.
 
-  --publish       As well as publishing a release under the fingerprint, publish
-                  an (Electron Forge compatible) release under the tag for the
-                  currently-installed version of react-native-macos. Requires
-                  --cache to be enabled as well.
+  --publish       Publish an Electron Fiddle-compatible release under the tag
+                  for the currently-installed version of react-native-macos.
                   Default: false.
 
   -h, --help      Show this help message and exit.
@@ -304,7 +286,7 @@ $ node demo.js --config Release
   // Create a release with the right folder structure and tag name to be
   // compatible with Electron Fiddle.
   if (publish) {
-    const tagName = `v${repoPackageJson.dependencies['react-native-macos']}`;
+    const tagName = getReactNativeMacosReleaseTagName();
 
     // Electron Fiddle forms a download URL based on the host architecture.
     // For now, we assume a blissful ARM-only world.
@@ -315,6 +297,10 @@ $ node demo.js --config Release
     const releaseDir = path.resolve(
       __dirname,
       `../releases/electron-${tagName}-darwin-arm64`,
+    );
+    const releaseZipPath = path.resolve(
+      __dirname,
+      `../releases/electron-${tagName}-darwin-arm64.zip`,
     );
     try {
       await rm(releaseDir, { recursive: true });
@@ -327,7 +313,8 @@ $ node demo.js --config Release
         throw error;
       }
     }
-    await mkdir(releaseDir);
+    await rm(releaseZipPath, { force: true });
+    await mkdir(releaseDir, { recursive: true });
 
     // Electron releases include the following files:
     // - Electron.app
@@ -344,10 +331,12 @@ $ node demo.js --config Release
     );
     await writeFile(path.join(releaseDir, 'LICENSE'), licence);
 
+    await createZip(releaseDir, releaseZipPath);
+
     await uploadGitHubRemoteBuildCacheForElectronFiddle(
       {
         ...uploadBuildCacheProps,
-        buildPath: releaseDir,
+        buildPath: releaseZipPath,
       },
       {
         ...ownerAndRepo,
@@ -390,8 +379,12 @@ async function getMyMacIdFromRunDestination({ scheme, workspace, cwd }) {
 }
 
 /**
- * A slight fork of resolveGitHubRemoteBuildCache() that allows us to alter the
- * the tag name and compression format to match Electron Fiddle's expectations.
+ * Publishes the Electron Fiddle-style release asset under the given version
+ * tag.
+ *
+ * Implemented as a slight fork of resolveGitHubRemoteBuildCache() that allows
+ * us to alter the the tag name and compression format to match Electron
+ * Fiddle's expectations.
  *
  * @param {import("@expo/config").UploadBuildCacheProps} uploadBuildCacheProps
  * @param {object} options options passed in from app.json.
@@ -405,22 +398,15 @@ async function uploadGitHubRemoteBuildCacheForElectronFiddle(
   { buildPath },
   { owner, repo, tagName },
 ) {
-  if (!BUILD_CACHE_PROVIDER_TOKEN) {
-    console.log(
-      '[build-cache-provider] No BUILD_CACHE_PROVIDER_TOKEN env var found in project env files; build-cache-provider skipping uploadGitHubRemoteBuildCache.',
-    );
-    return null;
-  }
-
   console.log(`[build-cache-provider] Uploading build to Github Releases`);
   try {
     const result = await createReleaseAndUploadAsset({
-      token: BUILD_CACHE_PROVIDER_TOKEN,
       owner,
       repo,
       tagName,
       binaryPath: buildPath,
-      compressionFormat: 'zip',
+      replaceExisting: true,
+      targetCommitish: env.GITHUB_SHA,
     });
 
     return result;
@@ -430,8 +416,22 @@ async function uploadGitHubRemoteBuildCacheForElectronFiddle(
       '[build-cache-provider] Release failed:',
       error instanceof Error ? error.message : 'Unknown error',
     );
-    process.exit(1);
+    exit(1);
   }
+}
+
+/** @returns {`v${number}.${number}.${number}`} */
+function getReactNativeMacosReleaseTagName() {
+  const version = repoPackageJson.dependencies['react-native-macos'];
+  if (!/^\d+\.\d+\.\d+$/.test(version)) {
+    console.error(
+      `[demo] Expected react-native-macos to be a plain x.y.z version, got "${version}".`,
+    );
+    exit(1);
+  }
+
+  // @ts-ignore
+  return `v${version}`;
 }
 
 /**

@@ -38,7 +38,14 @@ This crude IPC channel allows React Native Fiddle to trigger a dev reload of the
 
 ## Notes to self
 
-Here's how I use this repo:
+The intended release path is the manual `Release macOS Prebuild` GitHub Actions
+workflow. On each manual run it reads `react-native-macos` from
+`package.json`, requires it to be a plain `x.y.z` version, rebuilds the macOS
+client from the checked-out commit, replaces any existing `vX.Y.Z` release/tag,
+publishes the new asset, and emits a GitHub artifact attestation for build
+provenance.
+
+For a local fallback, here's how I use this repo:
 
 ```sh
 # Install npm dependencies
@@ -58,15 +65,13 @@ cd ..
 # Write it into .env.local in the format: `BUILD_CACHE_PROVIDER_TOKEN=github_pat_***`
 touch .env.local
 
-# To replace an existing v0.79.0 release, first delete the release from the
-# GitHub Releases page: https://github.com/shirakaba/rnmprebuilds/releases
-#
-# Next, delete the v0.79.0 tag.
-#
 # Finally, run this command from the repo root:
 node ./build-cache-provider/scripts/demo.js --publish
 ```
 
 You may ask what exactly this script does. In `build-cache-provider/scripts/demo.js`, I've re-implemented most of the `expo run ios` command to support React Native macOS, right down to [Expo Fingerprint](https://expo.dev/blog/fingerprint-your-native-runtime) and the [build cache provider](https://expo.dev/blog/build-cache-providers-in-expo). This is normally offered through EAS, but I adapted Expo's official [example](https://github.com/expo/examples/tree/master/with-github-remote-build-cache-provider) of how to set up a self-hosted build cache provider, again adapting it to support React Native macOS.
 
-Put it all together and I have a way to generate an ad hoc signed debug-configuration build of the client and push it straight to GitHub Releases under the appropriate version tag, e.g. `v0.79.0`. It also pushes a build tagged with the fingerprint (e.g. `fingerprint.78a05957a66a7b75e56f2f06981173bc448677a4`) while it's at it, mainly for the self-serving purpose that I can more easily pick up the CLI script as-is and use it in other projects as a sort of `expo run macos` command in future.
+Put it all together and I have a way to generate an ad hoc signed
+debug-configuration build of the client and push it straight to GitHub Releases
+under the appropriate version tag, e.g. `v0.79.0`. The old fingerprint-tagged
+GitHub release flow has been retired; fingerprint caching is now local-only.
